@@ -81,12 +81,14 @@ def chg_VoxelCoord(lists, str, origin, spacing):
             worldCoord = np.asarray([float(list[2]), float(list[1]), float(list[3])])
             voxelCoord = worldToVoxelCoord(worldCoord, origin, spacing)
             if list[4] is '1':
-                aug, aug_label = aug_candidate(voxelCoord)
-                cand_list.append((voxelCoord))
-                cand_list.append(aug[:len(aug)])
-                al_vec = np.ones((int(aug_label),1))
+                augs, aug_labels = aug_candidate(voxelCoord)
+                cand_list.append(voxelCoord)
                 labels.append(int(list[4]))
-                labels.append(al_vec)
+                for aug in augs:
+                    cand_list.append(aug)
+                al_vec = np.ones((int(aug_labels),1))
+                for aug_lbl in al_vec:
+                    labels.append(int(aug_lbl))
             else:
                 cand_list.append(voxelCoord)
                 labels.append(int(list[4]))
@@ -135,60 +137,67 @@ def nodule_patch_extraction(DAT_DATA_Path, CT_scans):
     for img_dir in CT_scans:
         npImage, npOrigin, npSpacing = load_itk_image(img_dir)
         normImage = normalizePlanes(npImage)
+        print(normImage.shape)
         voxelCands, labels = chg_VoxelCoord(cands, img_dir, npOrigin, npSpacing)
         candNum = len(labels)
-        voxelWidth = np.array([[40, 40, 40], [45, 45, 45], [50, 50, 50], [55, 55, 55]]) // npSpacing
-
-        pData_SML = np.memmap(filename=DAT_DATA_Path + "/temp_sml.dat",
-                                dtype='float32', mode='w+', shape=(20, 20, 6, candNum))
-        pData_MID = np.memmap(filename=DAT_DATA_Path + "/temp_mid.dat",
-                                dtype='float32', mode='w+', shape=(30, 30, 10, candNum))
-        pData_LAR = np.memmap(filename=DAT_DATA_Path + "/temp_lar.dat",
-                                dtype='float32', mode='w+', shape=(40, 40, 26, candNum))
-        plabel = np.memmap(filename=DAT_DATA_Path + "/temp.lbl",
-                            dtype='uint8', mode='w+', shape=(1, 1, candNum))
-        cNum = 0
-        for i, cand in enumerate(voxelCands):
-            tensor = rolling_window(normImage, (voxelWidth[2]))
-            print(tensor.shape)
-            SHAapes = tensor.shape
-            VCoord = int(cand - (voxelWidth[2] // 2))
-            if not (VCoord[0] >= SHAapes[0]) | (VCoord[1] >= SHAapes[1]) | (VCoord[2] >= SHAapes[2]):
-                patch = np.array(tensor[VCoord[0], VCoord[1], VCoord[2]])
-                # pTemp = misc.imresize(patch, (64, 64), interp='bilinear', mode='F')
-                # print(pTemp.shape)
-                plt.matshow(patch, fignum=1, cmap=plt.cm.gray)
-                # pData[:,:,cNum] = pTemp.copy()
-                plabel[:, :, cNum] = labels[i]
-                cNum += 1
-            else:
-                print(cand)
-        for gt_cand in shiftCands:
-            for cand in gt_cand:
-                for vw in voxelWidth:
-                    tensors = rolling_window(normImage, (vw, vw))
-                    #print(tensor.shape)
-                    Shapes = tensors.shape[:]
-
-                    VCord = (int(cand[0] - (vw // 2)), int(cand[1] - (vw // 2)), int(cand[2] - (vw // 2)))
-                    #print(VCoord)
-                    if not (VCord[0] >= Shapes[0]) | (VCord[1] >= Shapes[1]) | (VCord[2] >= Shapes[2]):
-                        patches = np.array(tensors[VCord[0], VCord[1], VCord[2]])
-                        # pTempes = misc.imresize(patches, (64, 64), interp='bilinear', mode='F')
-                        # plt.matshow(pTemp, fignum=1, cmap=plt.cm.gray)
-                        # pData[:,:,cNum] = pTempes.copy()
-                        plabel[:, :, cNum] = 1
+        voxelWidth = [[20, 20, 6, ['btm']], [30, 30, 10, ['mid']], [40, 40, 26, ['top']]]
+        for v in voxelWidth:
+            pData = np.memmap(filename=DAT_DATA_Path + "/temp.dat",
+                                    dtype='float32', mode='w+', shape=(v[0], v[1], v[2], candNum))
+            plabel = np.memmap(filename=DAT_DATA_Path + "/temp.lbl",
+                                dtype='uint8', mode='w+', shape=(1, 1, candNum))
+            cNum = 0
+            for i, cand in enumerate(voxelCands):
+                arg_arange = [int(cand[0] - v[0] / 2), int(cand[0] + v[0] / 2), int(cand[1] - v[1] / 2),
+                              int(cand[1] + v[1] / 2), int(cand[2] - v[2] / 2), int(cand[2] + v[2] / 2)]
+                cand_min_scale = (int(arg_arange[0] > normImage.shape[0]) + int(arg_arange[2] > normImage.shape[1])
+                                  + int(arg_arange[4] > normImage.shape[2]))
+                cand_max_scale = (int(arg_arange[1] > normImage.shape[0]) + int(arg_arange[3] > normImage.shape[1])
+                                  + int(arg_arange[5] > normImage.shape[2]))
+                if not labels[i] == '0':
+                    if not cand_min_scale > 0 or not cand_max_scale > 0:
+                        patch = np.array(normImage[arg_arange[0]:arg_arange[1], arg_arange[2]:arg_arange[3], arg_arange[4]:arg_arange[5]])
+                        # print(patch.shape)
+                        if not patch.shape[2] == v[2]:
+                            if normImage.shape[2] < arg_arange[5]:
+                                scale = normImage.shape[2] - arg_arange[5]
+                            elif arg_arange[4] == 0:
+                                scale = arg_arange[4] + 1
+                            patch = np.array(normImage[arg_arange[0]:arg_arange[1], arg_arange[2]:arg_arange[3],
+                                             (arg_arange[4] + scale):(arg_arange[5] + scale)])
+                            print(patch.shape, 'change')
+                        elif not patch.shape[1] == v[1]:
+                            if normImage.shape[1] < arg_arange[3]:
+                                scale = normImage.shape[1] - arg_arange[3]
+                            elif arg_arange[2] == 0:
+                                scale = arg_arange[2] + 1
+                            patch = np.array(normImage[arg_arange[0]:arg_arange[1],
+                                             (arg_arange[2] + scale):(arg_arange[3] + scale),
+                                             arg_arange[4]:arg_arange[5]])
+                            print(patch.shape, 'change')
+                        elif not patch.shape[0] == v[0]:
+                            if normImage.shape[0] < arg_arange[1]:
+                                scale = normImage.shape[0] - arg_arange[1]
+                            elif arg_arange[0] == 0:
+                                scale = arg_arange[0] + 1
+                            patch = np.array(normImage[(arg_arange[0] + scale):(arg_arange[1] + scale),
+                                             arg_arange[2]:arg_arange[3],
+                                             arg_arange[4]:arg_arange[5]])
+                            print(patch.shape, 'change')
+                        # plt.matshow(patch[:, :, 3], fignum=1, cmap=plt.cm.gray)
+                        pData[:, :, :, cNum] = patch.copy()
+                        plabel[:, :, cNum] = labels[i]
                         cNum += 1
                     else:
-                        print(gt_cand)
+                        print(cand)
 
-        pTempData = np.memmap(filename=DAT_DATA_Path + "/" + img_dir[5:-4] + ".dat",
-                          dtype='float32', mode='w+', shape=(64, 64, cNum))
+        pTempData = np.memmap(filename=DAT_DATA_Path + "/" + img_dir[5:-4] + str(v[3]) + ".dat",
+                          dtype='float32', mode='w+', shape=(v[0], v[1], v[2], cNum))
         pTemplabel = np.memmap(filename=DAT_DATA_Path + "/" + img_dir[5:-4] + ".lbl",
                            dtype='uint8', mode='w+', shape=(1, 1, cNum))
 
-        pTempData[:, :, :] = pData[:, :, :cNum]
-        pTemplabel[:, :, :] = plabel[:, :, :cNum]
+        pTempData[:, :, :, :] = pData[:, :, :, :cNum]
+        pTemplabel[:, :, :]   = plabel[:, :, :cNum]
 
         del pData, plabel, pTempData, pTemplabel
         totalSHApes.append([img_dir[5:-4], cNum])
