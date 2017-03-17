@@ -24,6 +24,13 @@ def conv_layer(data, weight, bias, padding, is_inception):
     return tf.nn.relu(tf.nn.bias_add(conv, bias))
 
 
+def conv3d_layer(data, weight, bias, padding, is_inception):
+    conv = tf.nn.conv3d(input=data, filter=weight, strides=[1, 1, 1, 1], padding=padding)
+    if is_inception:
+        return tf.nn.bias_add(conv, bias)
+    return tf.nn.relu(tf.nn.bias_add(conv, bias))
+
+
 def pool_layer(data):
     return tf.nn.max_pool(value=data, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding="VALID")
 
