@@ -1,25 +1,31 @@
 import csv
 import os
+import math
 from random import shuffle
 
 import SimpleITK as sitk
 import numpy as np
 from revised_code import train_model
-from revised_code import train_model_3D
+from revised_code import CAD_3D_model
 import matplotlib.pyplot as plt
+import evaluationScript as escript
+from evaluationScript.tools import csvTools
+from scipy import ndimage as nd
+
 
 def load_itk_image(filename):
     itkimage = sitk.ReadImage(filename)
-    numpyImage = sitk.GetArrayFromImage(itkimage)
+    numpyImage = sitk.GetArrayFromImage(itkimage) # z, y, x axis load
     numpyOrigin = np.array(list(reversed(itkimage.GetOrigin())))
     numpySpacing = np.array(list(reversed(itkimage.GetSpacing())))
     # print(numpyOrigin, numpySpacing)
-    numpyImage = np.transpose(numpyImage, axes=(1, 2, 0))
-    numpyOrigin = [numpyOrigin[2], numpyOrigin[1], numpyOrigin[0]]
-    numpySpacing = [numpySpacing[2], numpySpacing[1], numpySpacing[0]]
+    # numpyImage = np.transpose(numpyImage, axes=(1, 2, 0))
+    # numpyOrigin = [numpyOrigin[2], numpyOrigin[1], numpyOrigin[0]]
+    # numpySpacing = [numpySpacing[2], numpySpacing[1], numpySpacing[0]]
     # print(numpyOrigin, numpySpacing)
 
     return numpyImage, numpyOrigin, numpySpacing
+
 
 def readCSV(filename):
     lines = []
@@ -27,7 +33,17 @@ def readCSV(filename):
         csvreader = csv.reader(f)
         for line in csvreader:
             lines.append(line)
-    return lines
+    return lines[1:]
+
+
+def cal_diameter(target, candidate, diameter):
+    # dist = sum([ math.sqrt((abs(float(t))-abs(float(c)))**2) for t, c in zip(target, candidate) ])
+    dist = [ ((float(t) - float(c)) ** 2) for t, c in zip(target, candidate)]
+    dist = math.sqrt(sum(dist))
+    if dist <= float(diameter):
+        return True
+    else:
+        return False
 
 
 def resample(image, spacing, new_spacing):
@@ -87,7 +103,7 @@ def rolling_window(a: object, window: object) -> object:
 
 def img_rotation(img, k):
 
-    rot_img = np.rot90(img, k)
+    rot_img = np.rot90(img, k, axes=(1,2))
 
     return rot_img
 
@@ -95,9 +111,10 @@ def img_rotation(img, k):
 def chg_VoxelCoord(lists, str, origin, spacing):
     cand_list = []
     labels = []
+    # if len(lists) > 2000:
     for list in lists:
         if list[0] in str:
-            worldCoord = np.asarray([float(list[1]), float(list[2]), float(list[3])])
+            worldCoord = np.asarray([float(list[3]), float(list[2]), float(list[1])])
             voxelCoord = worldToVoxelCoord(worldCoord, origin, spacing)
             if list[4] is '1':
                 augs, aug_labels = aug_candidate(voxelCoord)
@@ -111,8 +128,36 @@ def chg_VoxelCoord(lists, str, origin, spacing):
             else:
                 cand_list.append(voxelCoord)
                 labels.append(int(list[4]))
-
     return cand_list, labels
+    # else:
+    #     for list in lists:
+    #         if list[0] in str:
+    #             worldCoord = np.asarray([float(list[1]), float(list[2]), float(list[3])])
+    #             voxelCoord = worldToVoxelCoord(worldCoord, origin, spacing)
+    #             augs, aug_labels = aug_candidate(voxelCoord)
+    #             cand_list.append(voxelCoord)
+    #             labels.append(1)
+    #             for aug in augs:
+    #                 cand_list.append(aug)
+    #             al_vec = np.ones((int(aug_labels), 1))
+    #             for aug_lbl in al_vec:
+    #                 labels.append(int(aug_lbl))
+    #
+    #     return cand_list, labels
+
+
+def VoxelCoord(lists, str, origin, spacing):
+    cand_list = []
+
+    for list in lists:
+        if list[0] in str:
+            worldCoord = np.asarray([float(list[1]), float(list[2]), float(list[3])])
+            voxelCoord = worldToVoxelCoord(worldCoord, origin, spacing)
+            diameter = math.floor(float(list[4])/spacing[0])
+            cand_list.append([voxelCoord[0], voxelCoord[1], voxelCoord[2], diameter])
+            print('|', worldCoord, '|->|', voxelCoord, '|')
+
+    return cand_list
 
 
 def worldToVoxelCoord(worldCoord, origin, spacing):
@@ -153,22 +198,42 @@ def k_fold_cross_validation(items, k, randomize=False):
     return training, validation, test
 
 
+def nodule_label_extraction(DAT_DATA_Path, CT_scans):
+    cands = readCSV(filename="CSVFile/candidates.csv")
+    annot = readCSV(filename="CSVFile/annotations.csv")
+    lbl = []
+
+    for a in annot:
+        for c, cand in enumerate(cands):
+            if cand[-1] == '1':
+                if a[0] == cand[0]:
+                    if cal_diameter(a[1:-1], cand[1:-1], a[-1]):
+                        lbl.append(c)
+                        print(c)
+            # else:
+            #     lbl.append('0')
+
+    return lbl
+
+
 def nodule_patch_extraction(DAT_DATA_Path, CT_scans):
-    cand_path = "CSVFile/candidates.csv"
-    cands = readCSV(cand_path)
+    cands = readCSV(filename="CSVFile/candidates.csv")
+    # annot = readCSV(filename="CSVFile/annotations.csv")
 
     btm_SHApes = []
     mid_SHApes = []
     top_SHApes = []
 
-    voxelWidth = [[20, 20, 6, 'btm'], [30, 30, 10, 'mid'], [40, 40, 26, 'top']]
-    voxelWidth_std = [40, 40, 26]
+    # voxelWidth = [[20, 20, 6, 'btm'], [30, 30, 10, 'mid'], [40, 40, 26, 'top']]
+    voxelWidth = [[10,30, 30, 'mid']]
+    voxelWidth_std = [26, 40, 40]
+    # VW_std = [30, 30, 10]
 
     for v, vw in enumerate(voxelWidth):
-        DAT_DATA_Path = 'output'
+        # DAT_DATA_Path = 'output_new'
         DAT_DATA_Path = DAT_DATA_Path + '/%s' % (vw[3])
         f = open(DAT_DATA_Path + '_' + "patient_list.txt", 'w')
-
+        VW_std = vw
         if not os.path.exists(DAT_DATA_Path):
             os.mkdir(DAT_DATA_Path)
         print(DAT_DATA_Path)
@@ -177,37 +242,41 @@ def nodule_patch_extraction(DAT_DATA_Path, CT_scans):
             normImage = normalizePlanes(npImage)
             print(normImage.shape)
             voxelCands, labels = chg_VoxelCoord(cands, img_dir, npOrigin, npSpacing)
+            # voxelAnnot, labels_t = chg_VoxelCoord(annot, img_dir, npOrigin, npSpacing)
             candNum = labels.count(0) + (labels.count(1) * 4)
             # print(candNum, labels.count(0), (labels.count(1) * 4))
+            # voxelCands.extend(voxelAnnot)
+            # labels.extend(labels_t)
             pData = np.memmap(filename=DAT_DATA_Path + "/temp.dat",
-                              dtype='float32', mode='w+', shape=(vw[0], vw[1], vw[2], candNum))
+                              dtype='float32', mode='w+', shape=(VW_std[0], VW_std[1], VW_std[2], candNum))
             plabel = np.memmap(filename=DAT_DATA_Path + "/temp.lbl",
                                dtype='uint8', mode='w+', shape=(1, 1, candNum))
             # print(pData.shape)
             cNum = 0
             for i, cand in enumerate(voxelCands):
-                arg_arange = [int(cand[0] - vw[0] / 2), int(cand[0] + vw[0] / 2), int(cand[1] - vw[1] / 2),
-                              int(cand[1] + vw[1] / 2), int(cand[2] - vw[2] / 2), int(cand[2] + vw[2] / 2)]
+                arg_arange = [(math.floor(cand[0]) - vw[0] / 2), (math.floor(cand[0]) + vw[0] / 2),
+                              (math.floor(cand[1]) - vw[1] / 2), (math.floor(cand[1]) + vw[1] / 2),
+                              (math.floor(cand[2]) - vw[2] / 2), (math.floor(cand[2]) + vw[2] / 2)]
                 std_arange = [int(cand[0] - voxelWidth_std[0] / 2), int(cand[0] + voxelWidth_std[0] / 2),
                               int(cand[1] - voxelWidth_std[1] / 2), int(cand[1] + voxelWidth_std[1] / 2),
                               int(cand[2] - voxelWidth_std[2] / 2), int(cand[2] + voxelWidth_std[2] / 2)]
 
                 def TP_voxel_extraction(image, arange, voxelWidth):
                     chg_scale = [0, 0, 0, 0, 0, 0]
-                    if arange[0] <= 0 and abs(0 - arange[0]) <= 4:
-                        scale = abs(1 - arange[0])
+                    if arange[0] <= 0 and abs(0. - arange[0]) <= 4:
+                        scale = abs(1. - arange[0])
                         arange[0] = arange[0] + scale
                         arange[1] = arange[0] + voxelWidth[0]
                         print(scale, 'arg0-1')
                         chg_scale[0] = chg_scale[0] + scale
-                    if arange[2] <= 0 and abs(0 - arange[2]) <= 4:
-                        scale = abs(1 - arange[2])
+                    if arange[2] <= 0 and abs(0. - arange[2]) <= 4:
+                        scale = abs(1. - arange[2])
                         arange[2] = arange[2] + scale
                         arange[3] = arange[2] + voxelWidth[1]
                         print(scale, 'arg2-3')
                         chg_scale[1] = chg_scale[1] + scale
-                    if arange[4] <= 0 and abs(0 - arange[4]) <= 4:
-                        scale = abs(1 - arange[4])
+                    if arange[4] <= 0 and abs(0. - arange[4]) <= 4:
+                        scale = abs(1. - arange[4])
                         arange[4] = arange[4] + scale
                         arange[5] = arange[4] + voxelWidth[2]
                         print(scale, 'arg4-5')
@@ -232,7 +301,9 @@ def nodule_patch_extraction(DAT_DATA_Path, CT_scans):
                         print(scale, 'arg5-4')
                         chg_scale[5] = chg_scale[5] + scale
 
-                    voxelTensor = np.array(image[arange[0]:arange[1], arange[2]:arange[3], arange[4]:arange[5]])
+                    voxelTensor = np.array(image[int(arange[0]):int(arange[1]),
+                                           int(arange[2]):int(arange[3]),
+                                           int(arange[4]):int(arange[5])])
                     return voxelTensor, chg_scale
                 # def FP_voxel_extraction(image, arange):
                 #     if arange[0] <= 0 and abs(0 - arange[0]) < 3:
@@ -286,7 +357,14 @@ def nodule_patch_extraction(DAT_DATA_Path, CT_scans):
                     and (std_arange[3] <= (normImage.shape[1] + 4) and (std_arange[3] - normImage.shape[1]) <= 4) \
                     and (std_arange[5] <= (normImage.shape[2] + 4) and (std_arange[5] - normImage.shape[2]) <= 4):
 
+                    # arg_arange = [arg_arange[2], arg_arange[3], arg_arange[0], arg_arange[1], arg_arange[4], arg_arange[5]]
                     patch, scale_lists = TP_voxel_extraction(image=normImage, arange=arg_arange, voxelWidth=vw)
+                    # if not patch.shape[0] == VW_std[0]:
+                        # zoom_size = [x / y for x, y in zip(VW_std, patch.shape)]
+                        # print(patch.shape)
+                        # patch = np.resize(patch, VW_std)
+                        # patch = scipy.misc.imresize(patch, VW_std, interp='bilinear', mode=None)
+                        # patch = nd.interpolation.zoom(patch, zoom=zoom_size)
                     pData[:, :, :, cNum] = patch.copy()
                     plabel[:, :, cNum] = labels[i]
                     cNum += 1
@@ -333,8 +411,9 @@ def nodule_patch_extraction(DAT_DATA_Path, CT_scans):
                     # plt.plot(int(cand[0]), int(cand[1]), 'r+')
                     # plt.axis([511, 0, 511], fignum=2)
                     # plt.show()
+
             pTempData = np.memmap(filename=DAT_DATA_Path + "/" + img_dir[5:-4] + ".dat",
-                                  dtype='float32', mode='w+', shape=(vw[0], vw[1], vw[2], cNum))
+                                  dtype='float32', mode='w+', shape=(VW_std[0], VW_std[1], VW_std[2], cNum))
             pTemplabel = np.memmap(filename=DAT_DATA_Path + "/" + img_dir[5:-4] + ".lbl",
                                    dtype='uint8', mode='w+', shape=(1, 1, cNum))
             pTempData[:, :, :, :] = pData[:, :, :, :cNum]
@@ -359,6 +438,202 @@ def nodule_patch_extraction(DAT_DATA_Path, CT_scans):
     return btm_SHApes, mid_SHApes, top_SHApes
 
 
+def slide_extraction(DAT_DATA_Path, CT_scans):
+    # cands = readCSV(filename="CSVFile/candidates.csv")
+    annot = readCSV(filename="CSVFile/annotations.csv")
+
+
+
+    DAT_DATA_Path = DAT_DATA_Path + '/Slide'
+
+    if not os.path.exists(DAT_DATA_Path):
+        os.mkdir(DAT_DATA_Path)
+
+    print(DAT_DATA_Path)
+    for ct, img_dir in enumerate(CT_scans):
+        npImage, npOrigin, npSpacing = load_itk_image(img_dir)
+        normImage = normalizePlanes(npImage)
+
+        reSizing = [512, 512, 200]
+        tempImage = np.memmap(filename=DAT_DATA_Path + "/" + img_dir[5:-4] + ".dat",
+                          dtype='float32', mode='w+', shape=(reSizing))
+        for x in range(0, 512):
+            for y in range(0, 512):
+                tempImage[x, y, :] = nd.zoom(normImage[x, y, :], 200 / normImage.shape[2], order=0)
+
+        print('|', normImage.shape, '|->|', tempImage.shape, '|')
+
+
+
+        voxelAnnot = VoxelCoord(annot, img_dir, npOrigin, npSpacing)
+
+        for va in voxelAnnot:
+            minX = int(va[0] - (va[3] / 2))
+            maxX = int(va[0] + (va[3] / 2))
+            minY = int(va[1] - (va[3] / 2))
+            maxY = int(va[1] + (va[3] / 2))
+            minZ = int(va[2] - (va[3] / 2))
+            maxZ = int(va[2] + (va[3] / 2))
+
+            tempImage[minY:maxY, minX:maxX, minZ:maxZ] = 1
+
+
+        print(tempImage.shape)
+
+        plabel = np.memmap(filename=DAT_DATA_Path + "/" + img_dir[5:-4] + ".lbl",
+                           dtype='uint8', mode='w+', shape=(reSizing))
+        plabel = tempImage.copy
+
+
+def slide_label_extraction(DAT_DATA_Path, CT_scans):
+    cands = readCSV(filename="CSVFile/candidates.csv")
+    annot = readCSV(filename="CSVFile/annotations.csv")
+    lbl = []
+
+    for a in annot:
+        for c, cand in enumerate(cands):
+            if cand[-1] == '1':
+                if a[0] == cand[0]:
+                    if cal_diameter(a[1:-1], cand[1:-1], a[-1]):
+                        lbl.append(c)
+                        print(c)
+            # else:
+            #     lbl.append('0')
+
+    return lbl
+
+
+def total_patch_extraction(DAT_DATA_Path, CT_scans):
+    cand_path = "CSVFile/candidates.csv"
+    cands = readCSV(cand_path)
+
+    btm_SHApes = []
+    mid_SHApes = []
+    top_SHApes = []
+
+    voxelWidth = [[20, 20, 6, 'btm'], [30, 30, 10, 'mid'], [40, 40, 26, 'top']]
+    VWidth_std = [30, 30, 10]
+
+    for v, vw in enumerate(voxelWidth):
+        DAT_DATA_Path = 'origin_ext_voxel'
+        if not os.path.exists(DAT_DATA_Path):
+            os.mkdir(DAT_DATA_Path)
+
+        DAT_DATA_Path = DAT_DATA_Path + '/%s' % (vw[3])
+        if not os.path.exists(DAT_DATA_Path):
+            os.mkdir(DAT_DATA_Path)
+
+        print(DAT_DATA_Path)
+        for ct, img_dir in enumerate(CT_scans):
+            npImage, npOrigin, npSpacing = load_itk_image(img_dir)
+            normImage = normalizePlanes(npImage)
+            print(normImage.shape)
+            voxelCands, labels = org_VoxelCoord(cands, img_dir, npOrigin, npSpacing)
+            candNum = len(labels)
+            print(candNum)
+
+            pData = np.memmap(filename=DAT_DATA_Path + "/temp.dat",
+                              dtype='float32', mode='w+', shape=(VWidth_std[0], VWidth_std[1], VWidth_std[2], candNum))
+            plabel = np.memmap(filename=DAT_DATA_Path + "/temp.lbl",
+                               dtype='uint8', mode='w+', shape=(1, 1, candNum))
+            print(plabel.shape)
+
+            cNum = 0
+            for i, cand in enumerate(voxelCands):
+                arg_arange = [int(cand[0] - vw[0] / 2), int(cand[0] + vw[0] / 2), int(cand[1] - vw[1] / 2),
+                              int(cand[1] + vw[1] / 2), int(cand[2] - vw[2] / 2), int(cand[2] + vw[2] / 2)]
+
+                def TP_voxel_extraction(image, arange, voxelWidth):
+                    # chg_scale = [0, 0, 0, 0, 0, 0]
+                    if arange[0] <= 0:
+                        scale = abs(1 - arange[0])
+                        arange[0] = arange[0] + scale
+                        arange[1] = arange[0] + voxelWidth[0]
+                        # print(scale, 'arg0-1')
+                        # chg_scale[0] = chg_scale[0] + scale
+                    if arange[2] <= 0:
+                        scale = abs(1 - arange[2])
+                        arange[2] = arange[2] + scale
+                        arange[3] = arange[2] + voxelWidth[1]
+                        # print(scale, 'arg2-3')
+                        # chg_scale[1] = chg_scale[1] + scale
+                    if arange[4] <= 0:
+                        scale = abs(1 - arange[4])
+                        arange[4] = arange[4] + scale
+                        arange[5] = arange[4] + voxelWidth[2]
+                        # print(scale, 'arg4-5')
+                        # chg_scale[2] = chg_scale[2] + scale
+
+                    if arange[1] > image.shape[0]:
+                        scale = abs(image.shape[0] - arange[1])
+                        arange[1] = arange[1] - scale
+                        arange[0] = arange[1] - voxelWidth[0]
+                        # print(scale, 'arg1-0')
+                        # chg_scale[3] = chg_scale[3] + scale
+                    if arange[3] > image.shape[1]:
+                        scale = abs(image.shape[1] - arange[3])
+                        arange[3] = arange[3] - scale
+                        arange[2] = arange[3] - voxelWidth[1]
+                        # print(scale, 'arg3-2')
+                        # chg_scale[4] = chg_scale[4] + scale
+                    if arange[5] > image.shape[2]:
+                        scale = abs(image.shape[2] - arange[5])
+                        arange[5] = arange[5] - scale
+                        arange[4] = arange[5] - voxelWidth[2]
+                        # print(scale, 'arg5-4')
+                        # chg_scale[5] = chg_scale[5] + scale
+
+                    voxelTensor = np.array(image[arange[0]:arange[1], arange[2]:arange[3], arange[4]:arange[5]])
+                    return voxelTensor
+                    # if not ((int(patch.shape[0] == vw[0]) + int(patch.shape[1] == vw[1]) +
+                    #              int(patch.shape[2] == vw[2])) == 3):
+                    #     print((arg_arange[0] > (0 - 4)) and (0 - arg_arange[0]) <= 4)
+                    #     print((arg_arange[2] > (0 - 4)) and (0 - arg_arange[2]) <= 4)
+                    #     print((arg_arange[4] > (0 - 4)) and (0 - arg_arange[4]) <= 4)
+                    #     print((arg_arange[1] <= (normImage.shape[0] + 4)) and (arg_arange[1] - normImage.shape[0]) <= 4)
+                    #     print((arg_arange[3] <= (normImage.shape[1] + 4)) and (arg_arange[3] - normImage.shape[1]) <= 4)
+                    #     print((arg_arange[5] <= (normImage.shape[2] + 4)) and (arg_arange[5] - normImage.shape[2]) <= 4)
+                    #     print(patch.shape)
+
+                patch = TP_voxel_extraction(image=normImage, arange=arg_arange, voxelWidth=vw)
+
+                if not patch.shape[0] == VWidth_std[0]:
+                    patch = np.resize(patch, (VWidth_std[0], VWidth_std[1], VWidth_std[2]))
+
+                pData[:, :, :, cNum] = patch.copy()
+                plabel[:, :, cNum] = labels[i]
+                cNum += 1
+
+                s = "voxelWidth: %d, imageNum: %d, candNum: %d, label: %d \n" % (v, ct, i, labels[i])
+                print(s)
+            print(cNum)
+            pTempData = np.memmap(filename=DAT_DATA_Path + "/" + img_dir[5:-4] + ".dat",
+                                  dtype='float32', mode='w+', shape=(VWidth_std[0], VWidth_std[1], VWidth_std[2], cNum))
+            pTemplabel = np.memmap(filename=DAT_DATA_Path + "/" + img_dir[5:-4] + ".lbl",
+                                   dtype='uint8', mode='w+', shape=(1, 1, cNum))
+
+            pTempData[:, :, :, :] = pData[:, :, :, :cNum]
+            pTemplabel[:, :, :] = plabel[:, :, :cNum]
+            del pData, plabel, pTempData, pTemplabel
+            if v == 0:
+                btm_SHApes.append([img_dir[5:-4], cNum])
+            elif v == 1:
+                mid_SHApes.append([img_dir[5:-4], cNum])
+            elif v == 2:
+                top_SHApes.append([img_dir[5:-4], cNum])
+        # if v == 0:
+        #     plt.hist(btm_count, fignum=1)
+        # elif v == 1:
+        #     plt.hist(mid_count, fignum=2)
+        # elif v == 2:
+        #     plt.hist(top_count, fignum=3)
+        # plt.xlabel("Change Scale")
+        # plt.ylabel("Frequency")
+        # plt.show()
+
+    return btm_SHApes, mid_SHApes, top_SHApes
+
+
 def run_train(train_dataset, val_dataset, test_dataset, dataset):
     model_def = train_model.model_def()
     # dataset = train or test define / irs_dataset = normalize method of prepocessing % one of hgg / vgg
@@ -375,41 +650,198 @@ def run_train(train_dataset, val_dataset, test_dataset, dataset):
     model_exec.test_original_CNN(softmax=softmax, data_node=data_node, dataset="t", model_epoch=str(10))
 
 
-def run_train_3D(train_dataset, val_dataset, test_dataset, dataset):
-    model_def = train_model_3D.model_def()
-    # dataset = train or test define / irs_dataset = normalize method of prepocessing % one of hgg / vgg
-    model_exec = train_model_3D.model_execute(train_dataset=train_dataset, val_dataset=val_dataset,
-                                           test_dataset=test_dataset, dataset=dataset)
+def run_train_3D(total_dataset, train_dataset, val_dataset, test_dataset, dataset, originset):
+
+    model_def = CAD_3D_model.model_def()
+    model_exec = CAD_3D_model.model_execute(train_dataset=train_dataset,
+                                              val_dataset=val_dataset, test_dataset=test_dataset,
+                                              dataset=dataset, originset=originset)
 
     for m in range(0, 3):
+
         if m == 0:
             model_data_path = model_exec.data_path + '/btm'
-            flag_data_path = model_exec.hdd_output_path + 'btm_testTotal.dat'
+            flag_data_path = './output_test/btm/btm_trainTotal.dat'
+
+            if not os.path.exists(flag_data_path):
+                model_exec.mk_patch_origial_CNN(dataset=total_dataset, lists_data=model_exec.lists_data,
+                                                dataset_name="fine", data_path=model_data_path, model_num=m)
+
+                model_exec.mk_patch_origial_CNN(dataset=val_dataset, lists_data=model_exec.lists_data,
+                                                dataset_name="val", data_path=model_data_path, model_num=m)
+
+                model_exec.mk_patch_origial_CNN(dataset=train_dataset, lists_data=model_exec.lists_data,
+                                                dataset_name="train", data_path=model_data_path, model_num=m)
+
             cross_entropy, softmax, layers, data_node, label_node = model_def.btm_CNN(train=True)
+            # cross_entropy, softmax, layers, data_node, label_node = model_def.btm_CNN(train=False)
+
+            # model_exec.test_original_CNN(softmax=softmax, data_node=data_node, model_epoch=str(0), model_num=m)
+            # model_exec.pre_train_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
+            #                          label_node=label_node, model_num=m)
+            # del cross_entropy, softmax, layers, data_node, label_node
+
+            # cross_entropy, softmax, layers, data_node, label_node = model_def.btm_CNN(train=True)
+            # model_exec.fine_tune_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
+            #                          label_node=label_node, model_num=m)
+            model_exec.train_original_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
+                                          label_node=label_node, model_num=m)
+            del cross_entropy, softmax, layers, data_node, label_node
         elif m == 1:
             model_data_path = model_exec.data_path + '/mid'
-            flag_data_path = model_exec.hdd_output_path + 'mid_testTotal.dat'
-            cross_entropy, softmax, layers, data_node, label_node = model_def.mid_CNN(train=True)
+            flag_data_path = '/output_test/mid/mid_trainTotal.dat'
+            cross_entropy, softmax, layers, data_node, label_node = model_def.mid_CNN(fine_Flag=True, train=True)
+            if not os.path.exists(flag_data_path):
+                model_exec.mk_patch_origial_CNN(dataset=total_dataset, lists_data=model_exec.lists_data,
+                                                dataset_name="fine", data_path=model_data_path, model_num=m)
+
+                model_exec.mk_patch_origial_CNN(dataset=val_dataset, lists_data=model_exec.lists_data,
+                                                dataset_name="val", data_path=model_data_path, model_num=m)
+
+                model_exec.mk_patch_origial_CNN(dataset=train_dataset, lists_data=model_exec.lists_data,
+                                                dataset_name="train", data_path=model_data_path, model_num=m)
+
+            # model_exec.pre_train_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
+            #                          label_node=label_node, model_num=m)
+            #
+            # cross_entropy, softmax, layers, data_node, label_node = model_def.mid_CNN(fine_Flag=True, train=True)
+            # model_exec.fine_tune_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
+            #                          label_node=label_node, model_num=m)
+            model_exec.train_original_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
+                                          label_node=label_node, model_num=m)
+            del cross_entropy, softmax, layers, data_node, label_node
         elif m == 2:
             model_data_path = model_exec.data_path + '/top'
-            flag_data_path = model_exec.hdd_output_path + 'top_testTotal.dat'
+            flag_data_path = model_exec.hdd_output_path + '/top/top_totalTotal.dat'
             cross_entropy, softmax, layers, data_node, label_node = model_def.top_CNN(train=True)
+            if not os.path.exists(flag_data_path):
+                model_exec.mk_patch_origial_CNN(dataset=total_dataset, lists_data=model_exec.lists_data,
+                                                dataset_name="fine", data_path=model_data_path, model_num=m)
 
-        if not os.path.exists(flag_data_path):
-            model_exec.mk_patch_origial_CNN(dataset=train_dataset, lists_data=model_exec.lists_data,
-                                            dataset_name="train", data_path=model_data_path, model_num=m)
-            model_exec.mk_patch_origial_CNN(dataset=val_dataset, lists_data=model_exec.lists_data,
-                                            dataset_name="val", data_path=model_data_path, model_num=m)
-            model_exec.mk_patch_origial_CNN(dataset=test_dataset, lists_data=model_exec.lists_data,
-                                            dataset_name="test", data_path=model_data_path, model_num=m)
+                model_exec.mk_patch_origial_CNN(dataset=val_dataset, lists_data=model_exec.lists_data,
+                                                dataset_name="val", data_path=model_data_path, model_num=m)
 
-        model_exec.train_original_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
-                                      label_node=label_node, model_num=m)
+                model_exec.mk_patch_origial_CNN(dataset=train_dataset, lists_data=model_exec.lists_data,
+                                                dataset_name="train", data_path=model_data_path, model_num=m)
+
+            # model_exec.pre_train_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
+            #                          label_node=label_node, model_num=m)
+            #
+            # cross_entropy, softmax, layers, data_node, label_node = model_def.top_CNN(train=True)
+            # model_exec.fine_tune_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
+            #                          label_node=label_node, model_num=m)
+            model_exec.train_original_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
+                                          label_node=label_node, model_num=m)
+            del cross_entropy, softmax, layers, data_node, label_node
+        # if not os.path.exists(flag_data_path):
+        #     model_exec.mk_patch_origial_CNN(dataset=total_dataset, lists_data=model_exec.lists_data,
+        #                                     dataset_name="fine", data_path=model_data_path, model_num=m)
+        #
+        #     model_exec.mk_patch_origial_CNN(dataset=val_dataset, lists_data=model_exec.lists_data,
+        #                                     dataset_name="val", data_path=model_data_path, model_num=m)
+        #
+        #     model_exec.mk_patch_origial_CNN(dataset=train_dataset, lists_data=model_exec.lists_data,
+        #                                     dataset_name="train", data_path=model_data_path, model_num=m)
+
+            # model_exec.mk_patch_origial_CNN(dataset=total_dataset, lists_data=model_exec.origin_dataset,
+            #                                 dataset_name="total", data_path=model_data_path, model_num=m)
+
+        # model_exec.pre_train_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
+        #                         label_node=label_node, model_num=m)
+        # del cross_entropy, softmax, layers, data_node, label_node
+        #
+        # cross_entropy, softmax, layers, data_node, label_node = model_def.btm_CNN(train=True)
+        # model_exec.fine_tune_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
+        #                          label_node=label_node, model_num=m)
+
+        # model_exec.train_original_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
+        #                               label_node=label_node, model_num=m)
+
         if m == 0:
             cross_entropy, softmax, layers, data_node, label_node = model_def.btm_CNN(train=False)
+            model_exec.test_original_CNN(softmax=softmax, data_node=data_node, model_epoch=str(27), model_num=m)
+
+            Evaluation_3D_CNN_CSV(result_path='output_test', data_size=originset, Scan_lists=total_dataset, model_num=m)
         elif m == 1:
-            cross_entropy, softmax, layers, data_node, label_node = model_def.mid_CNN(train=False)
+            cross_entropy, softmax, layers, data_node, label_node = model_def.mid_CNN(fine_Flag=False, train=False)
+            model_exec.test_original_CNN(softmax=softmax, data_node=data_node, model_epoch=str(9), model_num=m)
+
+            Evaluation_3D_CNN_CSV(result_path='output_test', data_size=originset, Scan_lists=total_dataset, model_num=m)
         elif m == 2:
             cross_entropy, softmax, layers, data_node, label_node = model_def.top_CNN(train=False)
+            model_exec.test_original_CNN(softmax=softmax, data_node=data_node, model_epoch=str(10), model_num=m)
 
-        model_exec.test_original_CNN(softmax=softmax, data_node=data_node, dataset="t", model_epoch=str(10), model_num=m)
+            Evaluation_3D_CNN_CSV(result_path='output_test', data_size=originset, Scan_lists=total_dataset, model_num=m)
+
+
+def Evaluation_3D_CNN_CSV(result_path, data_size, Scan_lists, model_num):
+    if not os.path.exists('submition'):
+        os.mkdir('submition')
+
+    cand_path = "CSVFile/candidates.csv"
+    cands = readCSV(cand_path)
+    # btm_result_path = result_path + "/btm_pm_cnn"
+    # mid_result_path = result_path + "/mid_pm_cnn"
+    # top_result_path = result_path + "/top_pm_cnn"
+
+    result_shape = (551065, 2)
+    if model_num == 0:
+        data = np.memmap(filename=result_path + "/btm_pm_cnn.dat", dtype=np.float32, mode="r", shape=result_shape)
+        csv_filename = 'submition/sub3D_Multi_level_CNN_btm.csv'
+    elif model_num == 1:
+        data = np.memmap(filename=result_path + "/mid_pm_cnn.dat", dtype=np.float32, mode="r", shape=result_shape)
+        csv_filename = 'submition/sub3D_Multi_level_CNN_mid.csv'
+    elif model_num == 2:
+        data = np.memmap(filename=result_path + "/top_pm_cnn.dat", dtype=np.float32, mode="r", shape=result_shape)
+        csv_filename = 'submition/sub3D_Multi_level_CNN_top.csv'
+
+    # fusion_btm = btm * 0.3
+    # fusion_mid = mid * 0.4
+    # fusion_top = top * 0.3
+    print(data[0], data[1])
+    # fusion_p_nd = fusion_btm + fusion_mid + fusion_top
+
+    rows = zip(cands[1:], data[:, 0])
+    # rows.insert(["seriesuid,coordX,coordY,coordZ,probability"])
+    # line = ["seriesuid,coordX,coordY,coordZ,probability"]
+    for row in rows:
+
+        csvTools.writeCSV(filename=csv_filename, lines=row)
+
+        # print("%d: line Done!!" % (c))
+        # csv_filename.close()
+
+
+def Total_Evaluation_3D_CNN_CSV(result_path, data_size, Scan_lists):
+    if not os.path.exists('submition'):
+        os.mkdir('submition')
+
+    btm_result_path = result_path + "/btm_pm_cnn"
+    mid_result_path = result_path + "/mid_pm_cnn"
+    top_result_path = result_path + "/top_pm_cnn"
+
+    # lbl = np.memmap(filename="output_test/btm_totalTotal_reshape.lbl", dtype=np.uint8, mode="r")
+    # result_shape = (lbl.shape[0], 2)
+    btm = np.memmap(filename=btm_result_path + ".dat", dtype=np.float32, mode="r")
+    mid = np.memmap(filename=mid_result_path + ".dat", dtype=np.float32, mode="r")
+    top = np.memmap(filename=top_result_path + ".dat", dtype=np.float32, mode="r")
+
+    fusion_btm = btm * 0.3
+    fusion_mid = mid * 0.4
+    fusion_top = top * 0.3
+
+    fusion_p_nd = fusion_btm + fusion_mid + fusion_top
+
+    csv_filename = 'submition/sub3D_Multi_level_CNN.csv'
+
+    for lineNum, p, nd_info in enumerate(fusion_p_nd, Scan_lists):
+        if lineNum == 0:
+
+            line = 'seriesuid,coordX,coordY,coordZ,probability'
+            csvTools.writeCSV(filename=csv_filename, lines=line)
+
+        else:
+
+            line = nd_info[0] + ',' + nd_info[1] + ',' + nd_info[2] + ',' + nd_info[3] + ',' + p
+            csvTools.writeCSV(filename=csv_filename, lines=line)
+
