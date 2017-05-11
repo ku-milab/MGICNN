@@ -192,10 +192,11 @@ def k_fold_cross_validation(items, k, randomize=False):
     slices = [items[i::k] for i in range(k)]
 
     #for i in range(k):
-    validation = slices[0]
-    test = slices[1]
-    training = slices[2] + slices[3] + slices[4]
-    return training, validation, test
+    # validation = slices[0]
+    test = slices[0]
+    training = slices[0] + slices[2] + slices[3] + slices[4]
+    # return training, validation, test
+    return training, test
 
 
 def nodule_label_extraction(DAT_DATA_Path, CT_scans):
@@ -225,9 +226,8 @@ def nodule_patch_extraction(DAT_DATA_Path, CT_scans):
     top_SHApes = []
 
     # voxelWidth = [[20, 20, 6, 'btm'], [30, 30, 10, 'mid'], [40, 40, 26, 'top']]
-    voxelWidth = [[10,30, 30, 'mid']]
+    voxelWidth = [[10, 30, 30, 'mid']]
     voxelWidth_std = [26, 40, 40]
-    # VW_std = [30, 30, 10]
 
     for v, vw in enumerate(voxelWidth):
         # DAT_DATA_Path = 'output_new'
@@ -650,11 +650,10 @@ def run_train(train_dataset, val_dataset, test_dataset, dataset):
     model_exec.test_original_CNN(softmax=softmax, data_node=data_node, dataset="t", model_epoch=str(10))
 
 
-def run_train_3D(total_dataset, train_dataset, val_dataset, test_dataset, dataset, originset):
+def run_train_3D(total_dataset, train_dataset, test_dataset, dataset, originset):
 
     model_def = CAD_3D_model.model_def()
-    model_exec = CAD_3D_model.model_execute(train_dataset=train_dataset,
-                                              val_dataset=val_dataset, test_dataset=test_dataset,
+    model_exec = CAD_3D_model.model_execute(train_dataset=train_dataset, test_dataset=test_dataset,
                                               dataset=dataset, originset=originset)
 
     for m in range(0, 3):
@@ -667,16 +666,19 @@ def run_train_3D(total_dataset, train_dataset, val_dataset, test_dataset, datase
                 model_exec.mk_patch_origial_CNN(dataset=total_dataset, lists_data=model_exec.lists_data,
                                                 dataset_name="fine", data_path=model_data_path, model_num=m)
 
-                model_exec.mk_patch_origial_CNN(dataset=val_dataset, lists_data=model_exec.lists_data,
-                                                dataset_name="val", data_path=model_data_path, model_num=m)
+                model_exec.mk_patch_origial_CNN(dataset=test_dataset, lists_data=model_exec.lists_data,
+                                                dataset_name="test", data_path=model_data_path, model_num=m)
 
                 model_exec.mk_patch_origial_CNN(dataset=train_dataset, lists_data=model_exec.lists_data,
                                                 dataset_name="train", data_path=model_data_path, model_num=m)
 
-            cross_entropy, softmax, layers, data_node, label_node = model_def.btm_CNN(train=True)
-            # cross_entropy, softmax, layers, data_node, label_node = model_def.btm_CNN(train=False)
+            # cross_entropy, softmax, layers, data_node, label_node, val_node, valbl_node = model_def.btm_CNN(train=True)
+            # model_exec.train_original_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
+            #                               label_node=label_node, val_node=val_node, valbl_node=valbl_node, model_num=m)
 
-            # model_exec.test_original_CNN(softmax=softmax, data_node=data_node, model_epoch=str(0), model_num=m)
+            cross_entropy, softmax, layers, data_node, label_node, val_node, valbl_node = model_def.btm_CNN(train=False)
+
+            model_exec.test_original_CNN(softmax=softmax, data_node=data_node, model_epoch=str(7), model_num=m)
             # model_exec.pre_train_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
             #                          label_node=label_node, model_num=m)
             # del cross_entropy, softmax, layers, data_node, label_node
@@ -684,8 +686,7 @@ def run_train_3D(total_dataset, train_dataset, val_dataset, test_dataset, datase
             # cross_entropy, softmax, layers, data_node, label_node = model_def.btm_CNN(train=True)
             # model_exec.fine_tune_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
             #                          label_node=label_node, model_num=m)
-            model_exec.train_original_CNN(cross_entropy=cross_entropy, softmax=softmax, data_node=data_node,
-                                          label_node=label_node, model_num=m)
+
             del cross_entropy, softmax, layers, data_node, label_node
         elif m == 1:
             model_data_path = model_exec.data_path + '/mid'
@@ -695,8 +696,8 @@ def run_train_3D(total_dataset, train_dataset, val_dataset, test_dataset, datase
                 model_exec.mk_patch_origial_CNN(dataset=total_dataset, lists_data=model_exec.lists_data,
                                                 dataset_name="fine", data_path=model_data_path, model_num=m)
 
-                model_exec.mk_patch_origial_CNN(dataset=val_dataset, lists_data=model_exec.lists_data,
-                                                dataset_name="val", data_path=model_data_path, model_num=m)
+                model_exec.mk_patch_origial_CNN(dataset=test_dataset, lists_data=model_exec.lists_data,
+                                                dataset_name="test", data_path=model_data_path, model_num=m)
 
                 model_exec.mk_patch_origial_CNN(dataset=train_dataset, lists_data=model_exec.lists_data,
                                                 dataset_name="train", data_path=model_data_path, model_num=m)
@@ -718,8 +719,8 @@ def run_train_3D(total_dataset, train_dataset, val_dataset, test_dataset, datase
                 model_exec.mk_patch_origial_CNN(dataset=total_dataset, lists_data=model_exec.lists_data,
                                                 dataset_name="fine", data_path=model_data_path, model_num=m)
 
-                model_exec.mk_patch_origial_CNN(dataset=val_dataset, lists_data=model_exec.lists_data,
-                                                dataset_name="val", data_path=model_data_path, model_num=m)
+                model_exec.mk_patch_origial_CNN(dataset=test_dataset, lists_data=model_exec.lists_data,
+                                                dataset_name="test", data_path=model_data_path, model_num=m)
 
                 model_exec.mk_patch_origial_CNN(dataset=train_dataset, lists_data=model_exec.lists_data,
                                                 dataset_name="train", data_path=model_data_path, model_num=m)

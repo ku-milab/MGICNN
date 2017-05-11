@@ -28,8 +28,8 @@ else:
     originSize = np.load(DAT_DATA_Path + "/" + "origin_inform.npy")
 
 k_splits = 5
-training, validation, test = def_Patch_Extract_.k_fold_cross_validation(CT_scans, k_splits)
+training, test = def_Patch_Extract_.k_fold_cross_validation(CT_scans, k_splits)
 
 # def_Patch_Extract_.run_train_3D(CT_scans, training, validation, test, dataSize)
-def_Patch_Extract_.run_train_3D(CT_scans, training, validation, test, dataSize, originSize)
+def_Patch_Extract_.run_train_3D(CT_scans, training, test, dataSize, originSize)
 # def_Patc-h_Extract_.run_train(training, validation, test, dataSize)

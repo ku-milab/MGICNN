@@ -49,8 +49,8 @@ def output_layer(data, weight, bias, label):
     hidden = tf.nn.bias_add(tf.matmul(tf.reshape(data, shape), weight), bias)
     if label is None:
         return None, tf.nn.softmax(hidden, dim=-1)
-    return tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=label,
-                                            logits=hidden)), tf.nn.softmax(hidden, dim=-1)
+    return tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=label, logits=hidden)),\
+                                                                                    tf.nn.softmax(hidden, dim=-1)
 
 
 class model_def:
@@ -85,23 +85,22 @@ class model_def:
 
         if train:
             batch_size = self.batch_size
+            test_data_node = tf.placeholder(tf.float32, shape=(
+                142964, self.z_size[0], self.patch_size[0], self.patch_size[0], self.mod_cnt))
+            do_rate = self.do_rate
+
+            train_labels_node = tf.placeholder(tf.int64, shape=batch_size)
+            test_labels_node = tf.placeholder(tf.int64, shape=142964)
         else:
             batch_size = 1
-        # train_data_node = tf.placeholder(tf.float32, shape=(batch_size, self.patch_size[0], self.patch_size[0], self.z_size[0], self.mod_cnt))
-        train_data_node = tf.placeholder(tf.float32, shape=(
-        batch_size, self.z_size[0] ,self.patch_size[0], self.patch_size[0], self.mod_cnt))
-        if train:
-            do_rate = self.do_rate
-            train_labels_node = tf.placeholder(tf.int64, shape=batch_size)
-        else:
             do_rate = 1.
+
             train_labels_node = None
+            test_data_node = None
+            test_labels_node = None
 
-        cw = []
-        cb = []
-
-        fw = []
-        fb = []
+        train_data_node = tf.placeholder(tf.float32, shape=(
+            batch_size, self.z_size[0] ,self.patch_size[0], self.patch_size[0], self.mod_cnt))
 
         layers = [train_data_node]
 
@@ -138,7 +137,7 @@ class model_def:
             else:
                 output = fc_layer(data=layers[-1], weight=w, bias=b, dropout=do_rate, batch_norm=False)
                 layers.append(output)
-        return cross_entropy, softmax, layers, train_data_node, train_labels_node
+        return cross_entropy, softmax, layers, train_data_node, train_labels_node, test_data_node, test_labels_node
 
 
     def mid_CNN(self, fine_Flag, train=True):
@@ -254,16 +253,16 @@ class model_def:
 
 
 class model_execute:
-    def __init__(self, train_dataset, val_dataset, test_dataset, dataset, originset):
+    def __init__(self, train_dataset, test_dataset, dataset, originset):
         self.train_dataset = train_dataset
-        self.val_dataset = val_dataset
+        # self.val_dataset = val_dataset
         self.test_dataset = test_dataset
         self.origin_dataset = originset
         self.lists_data = dataset
 
         self.data_name = ['btm', 'mid', 'top']
 
-        self.epochs = 100000
+        self.epochs = 30
         self.eval_freq = 30
         self.init_lr = 0.3
         self.pre_epochs = 30
@@ -675,7 +674,7 @@ class model_execute:
         tf.reset_default_graph()
 
 
-    def train_original_CNN(self, cross_entropy, softmax, data_node, label_node, model_num):
+    def train_original_CNN(self, cross_entropy, softmax, data_node, label_node, val_node, valbl_node, model_num):
         logthis("Original CNN training started!")
 
         if model_num == 0:
@@ -690,12 +689,10 @@ class model_execute:
             train_size = lbl.shape[0]
             rand_idx = np.random.permutation(train_size)
             lbl = lbl[rand_idx]
-            data_shape = (self.patch_size[model_num], self.patch_size[model_num],
-                          self.z_size[model_num], train_size)
+            data_shape = (self.z_size[model_num], self.patch_size[model_num], self.patch_size[model_num], train_size)
             data = np.memmap(filename=data_path + ".dat", dtype=np.float32, mode="r", shape=data_shape)
             # data = data[:, :, :, rand_idx]
-            data_reshape = (train_size, self.patch_size[model_num], self.patch_size[model_num],
-                          self.z_size[model_num])
+            data_reshape = (train_size, self.z_size[model_num], self.patch_size[model_num], self.patch_size[model_num])
             reshape_data = np.memmap(filename=data_path + '_reshape' + ".dat", dtype=np.float32,
                                      mode="w+", shape=data_reshape)
             reshape_lbl = np.memmap(filename=data_path + '_reshape' + ".lbl", dtype=np.uint8,
@@ -705,8 +702,7 @@ class model_execute:
             if self.data_name[model_num] == 'top':
 
                 idx1 = rand_idx[:int(idx_size // 3)]
-                reshape = (len(idx1), self.patch_size[model_num], self.patch_size[model_num],
-                                self.z_size[model_num])
+                reshape = (len(idx1), self.z_size[model_num], self.patch_size[model_num], self.patch_size[model_num])
                 data1 = np.memmap(filename=data_path + '_reshape_temp' + ".dat", dtype=np.float32,
                                          mode="w+", shape=reshape)
                 data1 = data[:, :, :, idx1].copy()
@@ -714,8 +710,7 @@ class model_execute:
                 # del data1
 
                 idx2 = rand_idx[int(idx_size // 3):-int(idx_size // 3)]
-                reshape = (len(idx2), self.patch_size[model_num], self.patch_size[model_num],
-                           self.z_size[model_num])
+                reshape = (len(idx2), self.z_size[model_num], self.patch_size[model_num], self.patch_size[model_num])
                 data2 = np.memmap(filename=data_path + '_reshape_temp' + ".dat", dtype=np.float32,
                                          mode="w+", shape=reshape)
                 data2 = data[:, :, :, idx2].copy()
@@ -723,8 +718,7 @@ class model_execute:
                 # del data2
 
                 idx3 = rand_idx[int((idx_size*2) // 3):]
-                reshape = (len(idx3), self.patch_size[model_num], self.patch_size[model_num],
-                           self.z_size[model_num])
+                reshape = (len(idx3), self.z_size[model_num], self.patch_size[model_num], self.patch_size[model_num])
                 data3 = np.memmap(filename=data_path + '_reshape_temp' + ".dat", dtype=np.float32,
                                          mode="w+", shape=reshape)
                 data3 = data[:, :, :, idx3].copy()
@@ -763,10 +757,9 @@ class model_execute:
                                          mode="r", shape=data_reshape)
 
         # lbl = one_hot(lbl)
-
         batch = tf.Variable(0, dtype=tf.float32)  # LR*D^EPOCH=FLR --> LR/FLR
         learning_rate = tf.train.exponential_decay(learning_rate=self.init_lr, global_step=batch,
-                                                   decay_steps=5000*2000,
+                                                   decay_steps=5000,
                                                    decay_rate=0.95, staircase=True)
         # print(learning_rate.value, batch.value)
         optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9).minimize(cross_entropy, global_step=batch)
@@ -788,14 +781,10 @@ class model_execute:
 
             # batch size
             cur_epoch = 0
+
             for step in range(int(self.epochs * train_size) // self.batch_size):
                 offset = (step * self.batch_size) % (train_size - self.batch_size)
-                print(offset)
-                # if self.data_name[model_num] == 'top':
-                    # offset = step % self.batch_size
-                #     batch_data = data[rand_idx[offset:offset + self.batch_size]]
-                #     batch_labels = lbl[offset:offset + self.batch_size]
-                # else:
+                print(int(offset / self.batch_size))
                 batch_data = data[offset:offset + self.batch_size]
                 batch_labels = lbl[offset:offset + self.batch_size]
                 feed_dict = {data_node: batch_data, label_node: batch_labels}
@@ -803,7 +792,6 @@ class model_execute:
                 _, l, lr, predictions, summary_out = sess.run(
                     [optimizer, cross_entropy, learning_rate, predict, summary_op],
                     feed_dict=feed_dict)
-
                 summary_writer.add_summary(summary_out, global_step=step * self.batch_size)
                 if step % self.eval_freq == 0:
                     elapsed_time = time.time() - start_time
@@ -818,10 +806,6 @@ class model_execute:
                     print((step * self.batch_size) / train_size)
                     # print(cur_epoch==(step * self.batch_size) / train_size)
                     print("Saved in path", saver.save(sess, model_path + "%d.ckpt" % (cur_epoch)))
-
-                    # randnum = np.random.randint(0, cut_size)
-                    # curdata = data[randnum:train_size + randnum - cut_size]
-                    # curlbl = lbl[randnum:train_size + randnum - cut_size]
                 cur_epoch = (step * self.batch_size) / train_size
 
             print("Saved in path", saver.save(sess, model_path + "savedmodel_final.ckpt"))
@@ -831,7 +815,7 @@ class model_execute:
     def test_original_CNN(self, softmax, data_node, model_epoch, model_num):
         logthis("Original CNN testing started!")
         if model_num == 0:
-            data_path = self.hdd_output_path + "btm/" + "btm_fineTotal"
+            data_path = self.hdd_output_path + "btm/" + "btm_testTotal"
             # output_path = self.hdd_output_path + "/btm"
         elif model_num == 1:
             data_path = self.hdd_output_path + "mid_totalTotal"
@@ -880,24 +864,9 @@ class model_execute:
                 curdata = np.array(curdata)
                 curdata.resize(self.mod_cnt, self.z_size[model_num], self.patch_size[model_num],
                                 self.patch_size[model_num], self.mod_cnt)
-                # for curheight, curheight_cnt in zip(curdata, range(pm_shape[1])):
-                #     for curwidth, curwidth_cnt in zip(curheight, range(pm_shape[2])):
-                #         if np.all(curwidth == 0):
-                #             result[curheight_cnt, curwidth_cnt, ..., 0] = 1
                 feed_dict = {data_node: curdata}
                 result[curdata_cnt, :] = sess.run(softmax, feed_dict=feed_dict)
                 print("Original CNN testing", curdata_cnt + 1, "/", result[curdata_cnt, :], end="\n")
-                # local_time = time.time()
-                # result = np.pad(result, (
-                #     (self.patch_size // 2, self.patch_size // 2), (self.patch_size // 2, self.patch_size // 2), (0, 0),
-                #     (0, 0)), mode="edge")
-                # zero_idx = np.argwhere(data[curdata_cnt, ..., 0] == 0)
-                # result[zero_idx[:, 0], zero_idx[:, 1], zero_idx[:, 2], 0] = 1
-                # result[zero_idx[:, 0], zero_idx[:, 1], zero_idx[:, 2], 1:] = 0
-                # medpy.io.save(np.argmax(result, axis=-1).astype(np.uint8), img_path + "VSD.%s_%s_%d_orig_cnn.%d.nii" % (
-                #    dataset, self.irs_dataset, curdata_cnt, data_num[curdata_cnt]), img_hdr)
-                # all_result[curdata_cnt, ..., :self.mod_cnt] = (data[curdata_cnt] - allmean) / allvar
-                # all_result[curdata_cnt, ..., :self.mod_cnt] = result[curdata_cnt, :]
                 all_result[curdata_cnt, :] = result[curdata_cnt, :]
 
         tf.reset_default_graph()
