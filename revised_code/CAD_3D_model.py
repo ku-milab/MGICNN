@@ -11,10 +11,13 @@ import matplotlib.pyplot as plt
 
 
 def init_weight_bias(name, shape, filtercnt, trainable):
-    # weights = tf.get_variable(name=name + "w", shape=shape, initializer=tf.contrib.layers.xavier_initializer(),
-    #                           dtype=tf.float32, trainable=trainable)
 
-    weights = tf.truncated_normal(shape=shape, mean=0.0,stddev=0.01, dtype=tf.float32, seed=None, name=name + "w")
+    if name[0] == 'c':
+        weights = tf.get_variable(name=name + "w", shape=shape, dtype=tf.float32,
+                                  initializer=tf.truncated_normal_initializer(stddev=0.1), trainable=trainable)
+    else:
+        weights = tf.get_variable(name=name + "w", shape=shape, initializer=tf.contrib.layers.xavier_initializer(),
+                                  dtype=tf.float32, trainable=trainable)
     biases = tf.Variable(initial_value=tf.constant(0, shape=[filtercnt], dtype=tf.float32), name=name + "b",
                          trainable=trainable)
     return weights, biases
@@ -22,9 +25,23 @@ def init_weight_bias(name, shape, filtercnt, trainable):
 
 def conv3d_layer(data, weight, bias, padding, is_inception):
     conv = tf.nn.conv3d(input=data, filter=weight, strides=[1, 1, 1, 1, 1], padding=padding)
+    # conv = tf.layers.conv3d(inputs=data, filters=bias, kernel_size=weight, strides=(1, 1, 1),
+    #                         padding=padding, data_format='channels_last',
+    #                         activation= ,
+    #                         kernel_initializer=tf.truncated_normal(shape=weight, mean=0.0, stddev=0.01,
+    #                                                                dtype=tf.float32, seed=None, name=name + "w")
+    #                         )
+    # data_mean, data_var = tf.nn.moments(x=)
+
+    # conv_norm = tf.nn.batch_normalization(x=conv, mean=data_mean, variance=)
     if is_inception:
         return tf.nn.bias_add(conv, bias)
-    return tf.nn.relu(tf.nn.bias_add(conv, bias))
+    return tf.nn.bias_add(conv, bias)
+    # return conv
+
+
+def relu_layer(conv):
+    return tf.nn.relu(conv)
 
 
 def pool3d_layer(data, kernel, stride):
@@ -76,45 +93,65 @@ class model_def:
           layer: [3,5,5@64] [1,1,1@64] [3,5,5,3@64] [1,5,5@64] fc
 
         """
-        conv3d_1_shape = [self.CV_kernel_size[1][2], self.CV_kernel_size[1][0], self.CV_kernel_size[1][1], self.mod_cnt, self.filters[0]]
-        conv3d_2_shape = [self.CV_kernel_size[1][2], self.CV_kernel_size[1][0], self.CV_kernel_size[1][1], self.filters[0], self.filters[0]]
-        conv3d_3_shape = [self.CV_kernel_size[0][2], self.CV_kernel_size[0][0], self.CV_kernel_size[0][1], self.filters[0], self.filters[0]]
-
-        fc_1_shape = [8 * 8 * 2 * 64, self.filters[1]]
-        fc_2_shape = [self.filters[1], self.lbl_cnt]
-
         if train:
             batch_size = self.batch_size
-            test_data_node = tf.placeholder(tf.float32, shape=(
-                142964, self.z_size[0], self.patch_size[0], self.patch_size[0], self.mod_cnt))
             do_rate = self.do_rate
-
+            train_data_node = tf.placeholder(tf.float32, shape=(
+                batch_size, self.z_size[0], self.patch_size[0], self.patch_size[0], self.mod_cnt))
             train_labels_node = tf.placeholder(tf.int64, shape=batch_size)
-            test_labels_node = tf.placeholder(tf.int64, shape=142964)
+
         else:
             batch_size = 1
             do_rate = 1.
-
+            train_data_node = tf.placeholder(tf.float32, shape=(
+                batch_size, self.z_size[0], self.patch_size[0], self.patch_size[0], self.mod_cnt))
             train_labels_node = None
-            test_data_node = None
-            test_labels_node = None
 
-        train_data_node = tf.placeholder(tf.float32, shape=(
-            batch_size, self.z_size[0] ,self.patch_size[0], self.patch_size[0], self.mod_cnt))
+
 
         layers = [train_data_node]
 
         cross_entropy, softmax = None, None
-        w1, b1 = init_weight_bias(name="c%d" % (0), shape=conv3d_1_shape, filtercnt=conv3d_1_shape[-1], trainable=train)
-        w2, b2 = init_weight_bias(name="c%d" % (1), shape=conv3d_2_shape, filtercnt=conv3d_2_shape[-1], trainable=train)
-        w3, b3 = init_weight_bias(name="c%d" % (2), shape=conv3d_3_shape, filtercnt=conv3d_3_shape[-1], trainable=train)
-        fw1, fb1 = init_weight_bias(name="f%d" % (0), shape=fc_1_shape, filtercnt=fc_1_shape[-1], trainable=train)
-        fw2, fb2 = init_weight_bias(name="f%d" % (1), shape=fc_2_shape, filtercnt=fc_2_shape[-1], trainable=train)
+        w1, b1 = init_weight_bias(name="c%d" % (0), shape=[self.CV_kernel_size[1][2], self.CV_kernel_size[1][0],
+                                                           self.CV_kernel_size[1][1], self.mod_cnt, self.filters[0]],
+                                  filtercnt=self.filters[0], trainable=train)
+        conv3d_1 = conv3d_layer(data=layers[-1], weight=w1, bias=b1, padding="VALID", is_inception=False)
+        # conv3d_1 = conv3d_layer(data=layers[-1], weight=conv3d_1_shape, bias=conv3d_1_shape[-1],
+        #                         padding="VALID", name="c%d" % (0))
+        layers.append(conv3d_1)
+        relu3d_1 = relu_layer(conv3d_1)
+        layers.append(relu3d_1)
+        pool3d = pool3d_layer(data=layers[-1], kernel=self.MP_kernel_size[0], stride=self.MP_stride_size[0])
+        layers.append(pool3d)
 
-        cw = [w1, w2, w3]
-        cb = [b1, b2, b3]
-        fw = [fw1, fw2]
-        fb = [fb1, fb2]
+        w2, b2 = init_weight_bias(name="c%d" % (1), shape=[self.CV_kernel_size[1][2], self.CV_kernel_size[1][0],
+                                                           self.CV_kernel_size[1][1], self.filters[0], self.filters[0]],
+                                  filtercnt=self.filters[0], trainable=train)
+        conv3d_2 = conv3d_layer(data=layers[-1], weight=w2, bias=b2, padding="VALID", is_inception=False)
+        layers.append(conv3d_2)
+        relu3d_2 = relu_layer(conv3d_2)
+        layers.append(relu3d_2)
+
+        w3, b3 = init_weight_bias(name="c%d" % (2), shape=[self.CV_kernel_size[0][2], self.CV_kernel_size[0][0],
+                                                           self.CV_kernel_size[0][1], self.filters[0], self.filters[0]],
+                                  filtercnt=self.filters[0], trainable=train)
+        conv3d_3 = conv3d_layer(data=layers[-1], weight=w3, bias=b3, padding="VALID", is_inception=False)
+        layers.append(conv3d_3)
+        relu3d_3 = relu_layer(conv3d_3)
+        layers.append(relu3d_3)
+
+        fw1, fb1 = init_weight_bias(name="f%d" % (0), shape=[8 * 8 * 2 * 64, self.filters[1]],
+                                    filtercnt=self.filters[1], trainable=train)
+        fc_1 = fc_layer(data=layers[-1], weight=fw1, bias=fb1, dropout=do_rate, batch_norm=False)
+        layers.append(fc_1)
+        fw2, fb2 = init_weight_bias(name="f%d" % (1), shape=[self.filters[1], self.lbl_cnt],
+                                    filtercnt=self.lbl_cnt, trainable=train)
+        cross_entropy, softmax = output_layer(data=layers[-1], weight=fw2, bias=fb2, label=train_labels_node)
+
+        # cw = [w1, w2, w3]
+        # cb = [b1, b2, b3]
+        # fw = [fw1, fw2]
+        # fb = [fb1, fb2]
 
         # for kernel, layer_cnt in zip(conv3d_layer_shape, range(len(conv3d_layer_shape))):
         #     w, b = init_weight_bias(name="c%d" % (layer_cnt), shape=kernel, filtercnt=kernel[-1], trainable=train)
@@ -125,130 +162,134 @@ class model_def:
         #     fw.append(w)
         #     fb.append(b)
 
-        for w, b, layer_cnt in zip(cw, cb, range(len(cw))):
-            output = conv3d_layer(data=layers[-1], weight=w, bias=b, padding="VALID", is_inception=False)
-            layers.append(output)
-            if layer_cnt == 0:
-                output = pool3d_layer(data=layers[-1], kernel=self.MP_kernel_size[0], stride=self.MP_stride_size[0])
-                layers.append(output)
-        for w, b, layer_cnt in zip(fw, fb, range(len(fw))):
-            if layer_cnt == 1:
-                cross_entropy, softmax = output_layer(data=layers[-1], weight=w, bias=b, label=train_labels_node)
-            else:
-                output = fc_layer(data=layers[-1], weight=w, bias=b, dropout=do_rate, batch_norm=False)
-                layers.append(output)
-        return cross_entropy, softmax, layers, train_data_node, train_labels_node, test_data_node, test_labels_node
+        # for w, b, layer_cnt in zip(cw, cb, range(len(cw))):
+        #     output = conv3d_layer(data=layers[-1], weight=w, bias=b, padding="VALID", is_inception=False)
+        #     layers.append(output)
+        #     if layer_cnt == 0:
+        #         output = pool3d_layer(data=layers[-1], kernel=self.MP_kernel_size[0], stride=self.MP_stride_size[0])
+        #         layers.append(output)
+        # for w, b, layer_cnt in zip(fw, fb, range(len(fw))):
+        #     if layer_cnt == 1:
+        #         cross_entropy, softmax = output_layer(data=layers[-1], weight=w, bias=b, label=train_labels_node)
+        #     else:
+        #         output = fc_layer(data=layers[-1], weight=w, bias=b, dropout=do_rate, batch_norm=False)
+        #         layers.append(output)
+        return cross_entropy, softmax, layers, train_data_node, train_labels_node
 
 
     def mid_CNN(self, fine_Flag, train=True):
         """
          Archi-2 3D CNN
           layer: [5,5,3@64] [2,2,1@64] [5,5,3@64] [5,5,3@64] fc
+          layer: [3,5,5@64] [1,2,2@64] [3,5,5@64] [3,5,5@64] fc
 
         """
-        conv3d_layer_shape = [[self.CV_kernel_size[1][0], self.CV_kernel_size[1][1], self.CV_kernel_size[1][2], self.mod_cnt, self.filters[0]],
-                              [self.CV_kernel_size[1][0], self.CV_kernel_size[1][1], self.CV_kernel_size[1][2], self.filters[0], self.filters[0]],
-                              [self.CV_kernel_size[1][0], self.CV_kernel_size[1][1], self.CV_kernel_size[1][2], self.filters[0], self.filters[0]]]
-
-        fc_layer_shape = [[5 * 5 * 4 * 64, self.filters[2]], [self.filters[2], self.filters[2]], [self.filters[2], self.lbl_cnt]]
-
-        if train:
-            batch_size = self.batch_size
-        else:
-            batch_size = 1
-        train_data_node = tf.placeholder(tf.float32, shape=(batch_size, self.patch_size[1], self.patch_size[1], self.z_size[1], self.mod_cnt))
-
         if train:
             do_rate = self.do_rate
+            batch_size = self.batch_size
             train_labels_node = tf.placeholder(tf.int64, shape=batch_size)
         else:
             do_rate = 1.
+            batch_size = 1
             train_labels_node = None
 
-        cw = []
-        cb = []
-
-        fw = []
-        fb = []
+        train_data_node = tf.placeholder(tf.float32, shape=(batch_size, self.patch_size[1], self.patch_size[1], self.z_size[1], self.mod_cnt))
 
         layers = [train_data_node]
 
         cross_entropy, softmax = None, None
-        for kernel, layer_cnt in zip(conv3d_layer_shape, range(len(conv3d_layer_shape))):
-            w, b = init_weight_bias(name="c%d" % (layer_cnt), shape=kernel, filtercnt=kernel[-1], trainable=train)
-            cw.append(w)
-            cb.append(b)
-        for kernel, layer_cnt in zip(fc_layer_shape, range(len(fc_layer_shape))):
-            # if fine_Flag == True and layer_cnt == 2 :
-            #      w, b = init_weight_bias(name="fc%d" % (layer_cnt), shape=kernel, filtercnt=kernel[-1], trainable=train)
-            # else:
-            w, b = init_weight_bias(name="f%d" % (layer_cnt), shape=kernel, filtercnt=kernel[-1], trainable=train)
-            fw.append(w)
-            fb.append(b)
-        for w, b, layer_cnt in zip(cw, cb, range(len(cw))):
-            output = conv3d_layer(data=layers[-1], weight=w, bias=b, padding="VALID", is_inception=False)
-            layers.append(output)
-            if layer_cnt == 0:
-                output = pool3d_layer( data=layers[-1], kernel=self.MP_kernel_size[1], stride=self.MP_stride_size[1])
-                layers.append(output)
-        for w, b, layer_cnt in zip(fw, fb, range(len(fw))):
-            if layer_cnt == 2:
-                cross_entropy, softmax = output_layer(data=layers[-1], weight=w, bias=b, label=train_labels_node)
-            else:
-                output = fc_layer(data=layers[-1], weight=w, bias=b, dropout=do_rate, batch_norm=False)
-                layers.append(output)
+        w1, b1 = init_weight_bias(name="c%d" % (0), shape=[self.CV_kernel_size[1][2], self.CV_kernel_size[1][0],
+                                                           self.CV_kernel_size[1][1], self.mod_cnt, self.filters[0]],
+                                  filtercnt=self.filters[0], trainable=train)
+        conv3d_1 = conv3d_layer(data=layers[-1], weight=w1, bias=b1, padding="VALID", is_inception=False)
+        layers.append(conv3d_1)
+        relu3d_1 = relu_layer(conv3d_1)
+        layers.append(relu3d_1)
+        pool3d = pool3d_layer(data=layers[-1], kernel=self.MP_kernel_size[0], stride=self.MP_stride_size[0])
+        layers.append(pool3d)
+
+        w2, b2 = init_weight_bias(name="c%d" % (1), shape=[self.CV_kernel_size[1][2], self.CV_kernel_size[1][0],
+                                                           self.CV_kernel_size[1][1], self.filters[0], self.filters[0]],
+                                  filtercnt=self.filters[0], trainable=train)
+        conv3d_2 = conv3d_layer(data=layers[-1], weight=w2, bias=b2, padding="VALID", is_inception=False)
+        layers.append(conv3d_2)
+        relu3d_2 = relu_layer(conv3d_2)
+        layers.append(relu3d_2)
+
+        w3, b3 = init_weight_bias(name="c%d" % (2), shape=[self.CV_kernel_size[1][2], self.CV_kernel_size[1][0],
+                                                           self.CV_kernel_size[1][1], self.filters[0], self.filters[0]],
+                                  filtercnt=self.filters[0], trainable=train)
+        conv3d_3 = conv3d_layer(data=layers[-1], weight=w3, bias=b3, padding="VALID", is_inception=False)
+        layers.append(conv3d_3)
+        relu3d_3 = relu_layer(conv3d_3)
+        layers.append(relu3d_3)
+
+        fw1, fb1 = init_weight_bias(name="f%d" % (0), shape=[5 * 5 * 4 * 64, self.filters[2]],
+                                    filtercnt=self.filters[1], trainable=train)
+        fc_1 = fc_layer(data=layers[-1], weight=fw1, bias=fb1, dropout=do_rate, batch_norm=False)
+        layers.append(fc_1)
+        fw2, fb2 = init_weight_bias(name="f%d" % (1), shape=[self.filters[2], self.lbl_cnt],
+                                    filtercnt=self.lbl_cnt, trainable=train)
+        cross_entropy, softmax = output_layer(data=layers[-1], weight=fw2, bias=fb2, label=train_labels_node)
+
         return cross_entropy, softmax, layers, train_data_node, train_labels_node
 
 
     def top_CNN(self, train=True):
-        conv3d_layer_shape = [[self.CV_kernel_size[1][0], self.CV_kernel_size[1][1], self.CV_kernel_size[1][2], self.mod_cnt, self.filters[0]],
-                              [self.CV_kernel_size[1][0], self.CV_kernel_size[1][1], self.CV_kernel_size[1][2], self.filters[0], self.filters[0]],
-                              [self.CV_kernel_size[1][0], self.CV_kernel_size[1][1], self.CV_kernel_size[1][2], self.filters[0], self.filters[0]]]
+        """
+         Archi-3 3D CNN
+         layer: [5,5,3@64] [2,2,2@64] [5,5,3@64] [5,5,3@64] fc
+         layer: [3,5,5@64] [2,2,2@64] [3,5,5@64] [3,5,5@64] fc
 
-        fc_layer_shape = [[10 * 10 * 8 * 64, self.filters[2]], [self.filters[2], self.filters[2]], [self.filters[2], self.lbl_cnt]]
-
-        if train:
-            batch_size = 100
-        else:
-            batch_size = 1
-        train_data_node = tf.placeholder(tf.float32, shape=(batch_size, self.patch_size[2], self.patch_size[2], self.z_size[2], self.mod_cnt))
-
+        """
         if train:
             do_rate = self.do_rate
+            batch_size = self.batch_size
             train_labels_node = tf.placeholder(tf.int64, shape=batch_size)
         else:
             do_rate = 1.
+            batch_size = 1
             train_labels_node = None
 
-        cw = []
-        cb = []
-
-        fw = []
-        fb = []
+        train_data_node = tf.placeholder(tf.float32, shape=(batch_size, self.z_size[2], self.patch_size[2], self.patch_size[2], self.mod_cnt))
 
         layers = [train_data_node]
 
         cross_entropy, softmax = None, None
-        for kernel, layer_cnt in zip(conv3d_layer_shape, range(len(conv3d_layer_shape))):
-            w, b = init_weight_bias(name="c%d" % (layer_cnt), shape=kernel, filtercnt=kernel[-1], trainable=train)
-            cw.append(w)
-            cb.append(b)
-        for kernel, layer_cnt in zip(fc_layer_shape, range(len(fc_layer_shape))):
-            w, b = init_weight_bias(name="f%d" % (layer_cnt), shape=kernel, filtercnt=kernel[-1], trainable=train)
-            fw.append(w)
-            fb.append(b)
-        for w, b, layer_cnt in zip(cw, cb, range(len(cw))):
-            output = conv3d_layer(data=layers[-1], weight=w, bias=b, padding="VALID", is_inception=False)
-            layers.append(output)
-            if layer_cnt == 0:
-                output = pool3d_layer( data=layers[-1], kernel=self.MP_kernel_size[2], stride=self.MP_stride_size[2])
-                layers.append(output)
-        for w, b, layer_cnt in zip(fw, fb, range(len(fw))):
-            if layer_cnt == 2:
-                cross_entropy, softmax = output_layer(data=layers[-1], weight=w, bias=b, label=train_labels_node)
-            else:
-                output = fc_layer(data=layers[-1], weight=w, bias=b, dropout=do_rate, batch_norm=False)
-                layers.append(output)
+        w1, b1 = init_weight_bias(name="c%d" % (0), shape=[self.CV_kernel_size[1][2], self.CV_kernel_size[1][0],
+                                                           self.CV_kernel_size[1][1], self.mod_cnt, self.filters[0]],
+                                  filtercnt=self.filters[0], trainable=train)
+        conv3d_1 = conv3d_layer(data=layers[-1], weight=w1, bias=b1, padding="VALID", is_inception=False)
+        layers.append(conv3d_1)
+        relu3d_1 = relu_layer(conv3d_1)
+        layers.append(relu3d_1)
+        pool3d = pool3d_layer(data=layers[-1], kernel=self.MP_kernel_size[2], stride=self.MP_stride_size[2])
+        layers.append(pool3d)
+
+        w2, b2 = init_weight_bias(name="c%d" % (1), shape=[self.CV_kernel_size[1][2], self.CV_kernel_size[1][0],
+                                                           self.CV_kernel_size[1][1], self.filters[0], self.filters[0]],
+                                  filtercnt=self.filters[0], trainable=train)
+        conv3d_2 = conv3d_layer(data=layers[-1], weight=w2, bias=b2, padding="VALID", is_inception=False)
+        layers.append(conv3d_2)
+        relu3d_2 = relu_layer(conv3d_2)
+        layers.append(relu3d_2)
+
+        w3, b3 = init_weight_bias(name="c%d" % (2), shape=[self.CV_kernel_size[1][2], self.CV_kernel_size[1][0],
+                                                           self.CV_kernel_size[1][1], self.filters[0], self.filters[0]],
+                                  filtercnt=self.filters[0], trainable=train)
+        conv3d_3 = conv3d_layer(data=layers[-1], weight=w3, bias=b3, padding="VALID", is_inception=False)
+        layers.append(conv3d_3)
+        relu3d_3 = relu_layer(conv3d_3)
+        layers.append(relu3d_3)
+
+        fw1, fb1 = init_weight_bias(name="f%d" % (0), shape=[10 * 10 * 8 * 64, self.filters[2]],
+                                    filtercnt=self.filters[2], trainable=train)
+        fc_1 = fc_layer(data=layers[-1], weight=fw1, bias=fb1, dropout=do_rate, batch_norm=False)
+        layers.append(fc_1)
+        fw2, fb2 = init_weight_bias(name="f%d" % (1), shape=[self.filters[2], self.lbl_cnt],
+                                    filtercnt=self.lbl_cnt, trainable=train)
+        cross_entropy, softmax = output_layer(data=layers[-1], weight=fw2, bias=fb2, label=train_labels_node)
+
         return cross_entropy, softmax, layers, train_data_node, train_labels_node
 
 
@@ -262,9 +303,9 @@ class model_execute:
 
         self.data_name = ['btm', 'mid', 'top']
 
-        self.epochs = 30
+        self.epochs = 5
         self.eval_freq = 30
-        self.init_lr = 0.3
+        self.init_lr = 0.000001
         self.pre_epochs = 30
         self.pre_init_lr = 0.3
         self.final_lr = 0.000001
@@ -397,306 +438,302 @@ class model_execute:
 
             del pData, plabel
 
-
-    def pre_train_CNN(self, cross_entropy, softmax, data_node, label_node, model_num):
-        logthis("Pre CNN training started!")
-
-        if model_num == 0:
-            data_path = self.hdd_output_path + "/btm" + "/btm_trainTotal"
-            val_path = self.hdd_output_path + "/btm" + "/btm_valTotal"
-        elif model_num == 1:
-            data_path = self.hdd_output_path + "/mid" + "/mid_trainTotal"
-            val_path = self.hdd_output_path + "/mid"+ "/mid_valTotal"
-        elif model_num == 2:
-            data_path = self.hdd_output_path + "/top" + "/top_trainTotal"
-            val_path = self.hdd_output_path + "/top" + "/top_valTotal"
-
-        if not os.path.exists("%s_reshape.dat" % (data_path)):
-            lbl = np.memmap(filename=data_path + ".lbl", dtype=np.uint8, mode="r")
-            train_size = lbl.shape[0]
-            print(lbl.shape, sum(lbl))
-            rand_idx = np.random.permutation(train_size)
-            lbl = lbl[rand_idx]
-            data_shape = (self.patch_size[model_num], self.patch_size[model_num],
-                          self.z_size[model_num], train_size)
-            data = np.memmap(filename=data_path + ".dat", dtype=np.float32, mode="r", shape=data_shape)
-            # data = data[:, :, :, rand_idx]
-            data_reshape = (train_size, self.patch_size[model_num], self.patch_size[model_num],
-                          self.z_size[model_num])
-            reshape_data = np.memmap(filename=data_path + '_reshape' + ".dat", dtype=np.float32,
-                                     mode="w+", shape=data_reshape)
-            lbl_reshape = (train_size)
-            reshape_lbl = np.memmap(filename=data_path + '_reshape' + ".lbl", dtype=np.uint8,
-                                     mode="w+", shape=lbl_reshape)
-            data = data[:, :, :, rand_idx]
-            data = np.transpose(data, axes=(3, 0, 1, 2))
-            # data = data.append([])
-            reshape_data[:, :, :, :] = data.copy()
-            reshape_lbl[:] = lbl.copy()
-            # plt.matshow(data[:,:,3,1], fignum=1, cmap=plt.cm.gray)
-            # plt.show()
-            del data, reshape_data, lbl, reshape_lbl
-
-        lbl = np.memmap(filename=data_path + '_reshape' + ".lbl", dtype=np.uint8, mode="r")
-        val_lbl = np.memmap(filename=val_path + ".lbl", dtype=np.uint8, mode="r")
-        train_size = lbl.shape[0]
-        val_size = val_lbl.shape[0]
-        print(lbl.shape, val_size, sum(lbl))
-        data_reshape = (train_size, self.patch_size[model_num], self.patch_size[model_num],
-                        self.z_size[model_num], self.mod_cnt)
-        val_shape = (val_size, self.patch_size[model_num], self.patch_size[model_num],
-                        self.z_size[model_num], self.mod_cnt)
-        data = np.memmap(filename=data_path + '_reshape' + ".dat", dtype=np.float32,
-                                     mode="r", shape=data_reshape)
-        val = np.memmap(filename=val_path + ".dat", dtype=np.float32, mode="r", shape=val_shape)
-
-        batch = tf.Variable(0, dtype=tf.float32)  # LR*D^EPOCH=FLR --> LR/FLR
-        learning_rate = tf.train.exponential_decay(learning_rate=self.init_lr, global_step=batch,
-                                                   decay_steps=25,
-                                                   decay_rate=0.95, staircase=True)
-        # print(learning_rate)
-        optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9).minimize(cross_entropy, global_step=batch)
-        predict = tf.to_double(100) * (
-            tf.to_double(1) - tf.reduce_mean(tf.to_double(tf.nn.in_top_k(softmax, label_node, 1))))
-
-        with tf.Session() as sess:
-            summary_path = self.hdd_output_path + "summary_%s_pre_cnn/%d" % (self.data_name[model_num], int(time.time()))
-            # summary_val_path = self.hdd_output_path + \
-            #                    "summary_%s_pre_cnn/%d" % (self.data_name[model_num], int(time.time()))
-            model_path = self.hdd_output_path + "model_%s_pre_cnn/" % (self.data_name[model_num])
-            if not os.path.exists(model_path):
-                os.makedirs(model_path)
-            tf.global_variables_initializer().run()
-            print("Variable Initialized")
-            tf.summary.scalar("error", predict)
-            summary_op = tf.summary.merge_all()
-            summary_writer = tf.summary.FileWriter(summary_path, sess.graph)
-            # summary_val_writer = tf.summary.FileWriter(summary_val_path, sess.graph)
-            saver = tf.train.Saver(keep_checkpoint_every_n_hours=2, max_to_keep=30)
-            start_time = time.time()
-
-            # batch size
-            cur_epoch = 0
-            for step in range(int(self.pre_epochs * train_size) // self.batch_size):
-                offset = (step * self.batch_size) % (train_size - self.batch_size)
-                val_offset = (step * self.batch_size) % (val_size - self.batch_size)
-                # offset = step % self.batch_size
-                batch_data = data[offset:offset + self.batch_size]
-                batch_labels = lbl[offset:offset + self.batch_size]
-                # batch_val = val[val_offset:val_offset + self.batch_size]
-                # batch_val_labels = val_lbl[val_offset:val_offset + self.batch_size]
-                feed_dict = {data_node: batch_data, label_node: batch_labels}
-
-                _, l, lr, predictions, summary_out = sess.run(
-                    [optimizer, cross_entropy, learning_rate, predict, summary_op],
-                    feed_dict=feed_dict)
-                #
-                # feed_dict_val = {data_node: batch_val, label_node:batch_val_labels}
-                # predictions_val = sess.run([predict], feed_dict=feed_dict_val)
-
-                summary_writer.add_summary(summary_out, global_step=step * self.batch_size)
-                if step % self.eval_freq == 0:
-                    elapsed_time = time.time() - start_time
-                    start_time = time.time()
-                    print('Step %d (pre_epoch %.2f), %d s' % (step,
-                                                              float(step) * self.batch_size / train_size, elapsed_time))
-                    print('Minibatch loss: %.3f, learning rate: %.6f' % (l, lr))
-                    # print('Minibatch error: %.3f Val error: %.3f' % (predictions, predictions_val[0]))
-                    # print('Minibatch error: %.1f Var error: %.1f' % (predictions, predictions_val))
-
-                if np.floor(cur_epoch) != np.floor((step * self.batch_size) / train_size):
-                    print(cur_epoch)
-                    print((step * self.batch_size) / train_size)
-                    # print(cur_epoch==(step * self.batch_size) / train_size)
-                    print("Saved in path", saver.save(sess, model_path + "%d.ckpt" % (cur_epoch)))
-
-                    # randnum = np.random.randint(0, cut_size)
-                    # curdata = data[randnum:train_size + randnum - cut_size]
-                    # curlbl = lbl[randnum:train_size + randnum - cut_size]
-                cur_epoch = (step * self.batch_size) / train_size
-
-            print("Saved in path", saver.save(sess, model_path + "savedmodel_final.ckpt"))
-        tf.reset_default_graph()
-
-
-    def fine_tune_CNN(self, cross_entropy, softmax, data_node, label_node, model_num):
-        def find(target, obj):
-            lists = []
-            for i, lst in enumerate(obj):
-                # for j, name in enumerate(lst):
-                if lst == target:
-                    lists.append(i)
-
-            return lists
-
-        logthis("Fine Tune CNN training started!")
-
-        if model_num == 0:
-            data_path = self.hdd_output_path + "/btm/" + "btm_fineTotal"
-            val_path = self.hdd_output_path + "/btm/" + "btm_valTotal"
-
-        elif model_num == 1:
-            data_path = self.hdd_output_path + "/mid/" + "mid_fineTotal"
-            val_path = self.hdd_output_path + "/mid/" + "mid_valTotal"
-
-        elif model_num == 2:
-            data_path = self.hdd_output_path + "/top/" + "top_fineTotal"
-            val_path = self.hdd_output_path + "/top/" + "top_valTotal"
-
-        if not os.path.exists("%s_reshape.dat" % (data_path)):
-            lbl = np.memmap(filename=data_path + ".lbl", dtype=np.uint8, mode="r")
-            train_size = lbl.shape[0]
-
-            true_idx = find(1, lbl)
-            false_idx = find(0, lbl)
-
-            tune_false_idx = false_idx[:len(true_idx)]
-
-            true_idx.extend(tune_false_idx)
-
-            rand_idx = np.random.permutation(len(true_idx))
-            data_shape = (self.patch_size[model_num], self.patch_size[model_num],
-                          self.z_size[model_num], train_size, self.mod_cnt)
-
-            data = np.memmap(filename=data_path + ".dat", dtype=np.float32, mode="r", shape=data_shape)
-
-            tune_lbl = lbl[true_idx]
-            tune_data = data[:, :, :, true_idx, :]
-            del data, lbl
-
-            lbl = tune_lbl[rand_idx]
-            data = tune_data[:, :, :, rand_idx, :]
-            data = np.transpose(data, axes=(3, 0, 1, 2, 4))
-
-            # data_reshape = (self.patch_size[model_num], self.patch_size[model_num],
-            #               self.z_size[model_num], len(true_idx), self.mod_cnt)
-            # reshape_data = np.memmap(filename=data_path + '_reshape' + ".dat", dtype=np.float32,
-            #                          mode="w+", shape=data_reshape)
-            # reshape_lbl = np.memmap(filename=data_path + '_reshape' + ".dat", dtype=np.float32,
-            #                          mode="w+", shape=len(true_idx))
-            #
-            # reshape_data[:, :, :, :, :] = tune_data.copy()
-            # reshape_lbl[:] = tune_lbl.copy()
-
-            del tune_data, tune_lbl
-        else:
-            lbl = np.memmap(filename=data_path + ".lbl", dtype=np.uint8, mode="r")
-
-            true_idx = find(1, lbl)
-            false_idx = find(0, lbl)
-            tune_false_idx = false_idx[:len(true_idx)]
-
-            true_idx.extend(tune_false_idx)
-            data_reshape = (self.patch_size[model_num], self.patch_size[model_num],
-                            self.z_size[model_num], len(true_idx), self.mod_cnt)
-            data = np.memmap(filename=data_path + "_reshape.dat", dtype=np.float32, mode="r", shape=data_reshape)
-            lbl = np.memmap(filename=data_path + "_reshape.lbl", dtype=np.uint8, mode="r")
-
-        val_lbl = np.memmap(filename=val_path + ".lbl", dtype=np.uint8, mode="r")
-
-        val_size = val_lbl.shape[0]
-        val_shape = (self.patch_size[model_num], self.patch_size[model_num],
-                          self.z_size[model_num], val_size, self.mod_cnt)
-
-        val = np.memmap(filename=val_path + ".dat", dtype=np.float32, mode="r", shape=val_shape)
-        train_size = data.shape[0]
-        batch = tf.Variable(0, dtype=tf.float32)  # LR*D^EPOCH=FLR --> LR/FLR
-        learning_rate = tf.train.exponential_decay(learning_rate=0.0001, global_step=batch * self.batch_size,
-                                                   decay_steps=25, staircase=True,
-                                                   decay_rate=0.95)
-        val = np.transpose(val, axes=(3, 0, 1, 2, 4))
-        # print(learning_rate.value, batch.value)
-        optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9).minimize(cross_entropy)
-        predict = tf.to_double(100) * (
-            tf.to_double(1) - tf.reduce_mean(tf.to_double(tf.nn.in_top_k(softmax, label_node, 1))))
-
-        with tf.Session() as sess:
-            summary_path = self.hdd_output_path + "summary_%s_cnn/%d" % (self.data_name[model_num], int(time.time()))
-
-            fine_model_path = self.hdd_output_path + "model_%s_fine_cnn/" % (self.data_name[model_num])
-            model_path = self.hdd_output_path + "model_%s_pre_cnn/savedmodel_final.ckpt" % (self.data_name[model_num])
-            if not os.path.exists(fine_model_path):
-                os.makedirs(fine_model_path)
-                print("Model is not exist !!!")
-
-            tf.global_variables_initializer().run()
-            print("Variable Initialized")
-
-            tf.summary.scalar("error", predict)
-            summary_op = tf.summary.merge_all()
-            summary_writer = tf.summary.FileWriter(summary_path, sess.graph)
-            # conv2_w = tf.get_tensor_by_name('c2w')
-            saver = tf.train.Saver(keep_checkpoint_every_n_hours=2, max_to_keep=30)
-            saver.restore(sess, model_path)
-
-            start_time = time.time()
-
-            # batch size
-            cur_epoch = 0
-            for step in range(int(self.epochs * train_size) // self.batch_size):
-                offset = (step * self.batch_size) % (train_size - self.batch_size)
-                val_offset = (step * self.batch_size) % (val_size - self.batch_size)
-                print(offset, val_offset)
-                batch_data = data[offset:offset + self.batch_size]
-                batch_labels = lbl[offset:offset + self.batch_size]
-                batch_val = val[val_offset:val_offset + self.batch_size]
-                batch_val_labels = val_lbl[val_offset:val_offset + self.batch_size]
-
-                feed_dict = {data_node: batch_data, label_node: batch_labels}
-
-                _, l, lr, predictions, summary_out = sess.run(
-                    [optimizer, cross_entropy, learning_rate, predict, summary_op],
-                    feed_dict=feed_dict)
-                feed_dict_val = {data_node: batch_val, label_node: batch_val_labels}
-                predictions_val = sess.run([predict], feed_dict=feed_dict_val)
-
-                summary_writer.add_summary(summary_out, global_step=step * self.batch_size)
-                if step % self.eval_freq == 0:
-                    elapsed_time = time.time() - start_time
-                    start_time = time.time()
-                    print(
-                        'Step %d (epoch %.2f), %d s' % (step, float(step) * self.batch_size / train_size, elapsed_time))
-                    print('Minibatch loss: %.3f, learning rate: %.6f' % (l, lr))
-                    print('Minibatch error: %.2f Val error: %.2f' % (predictions, predictions_val[0]))
-
-                if np.floor(cur_epoch) != np.floor((step * self.batch_size) / train_size):
-                    print(cur_epoch)
-                    print((step * self.batch_size) / train_size)
-                    # print(cur_epoch==(step * self.batch_size) / train_size)
-                    print("Saved in path", saver.save(sess, fine_model_path + "%d.ckpt" % (cur_epoch)))
-
-                    # randnum = np.random.randint(0, cut_size)
-                    # curdata = data[randnum:train_size + randnum - cut_size]
-                    # curlbl = lbl[randnum:train_size + randnum - cut_size]
-                cur_epoch = (step * self.batch_size) / train_size
-
-            print("Saved in path", saver.save(sess, fine_model_path + "savedmodel_final.ckpt"))
-        tf.reset_default_graph()
+    # def pre_train_CNN(self, cross_entropy, softmax, data_node, label_node, model_num):
+    #     logthis("Pre CNN training started!")
+    #
+    #     if model_num == 0:
+    #         data_path = self.hdd_output_path + "/btm" + "/btm_trainTotal"
+    #         val_path = self.hdd_output_path + "/btm" + "/btm_valTotal"
+    #     elif model_num == 1:
+    #         data_path = self.hdd_output_path + "/mid" + "/mid_trainTotal"
+    #         val_path = self.hdd_output_path + "/mid"+ "/mid_valTotal"
+    #     elif model_num == 2:
+    #         data_path = self.hdd_output_path + "/top" + "/top_trainTotal"
+    #         val_path = self.hdd_output_path + "/top" + "/top_valTotal"
+    #
+    #     if not os.path.exists("%s_reshape.dat" % (data_path)):
+    #         lbl = np.memmap(filename=data_path + ".lbl", dtype=np.uint8, mode="r")
+    #         train_size = lbl.shape[0]
+    #         print(lbl.shape, sum(lbl))
+    #         rand_idx = np.random.permutation(train_size)
+    #         lbl = lbl[rand_idx]
+    #         data_shape = (self.patch_size[model_num], self.patch_size[model_num],
+    #                       self.z_size[model_num], train_size)
+    #         data = np.memmap(filename=data_path + ".dat", dtype=np.float32, mode="r", shape=data_shape)
+    #         # data = data[:, :, :, rand_idx]
+    #         data_reshape = (train_size, self.patch_size[model_num], self.patch_size[model_num],
+    #                       self.z_size[model_num])
+    #         reshape_data = np.memmap(filename=data_path + '_reshape' + ".dat", dtype=np.float32,
+    #                                  mode="w+", shape=data_reshape)
+    #         lbl_reshape = (train_size)
+    #         reshape_lbl = np.memmap(filename=data_path + '_reshape' + ".lbl", dtype=np.uint8,
+    #                                  mode="w+", shape=lbl_reshape)
+    #         data = data[:, :, :, rand_idx]
+    #         data = np.transpose(data, axes=(3, 0, 1, 2))
+    #         # data = data.append([])
+    #         reshape_data[:, :, :, :] = data.copy()
+    #         reshape_lbl[:] = lbl.copy()
+    #         # plt.matshow(data[:,:,3,1], fignum=1, cmap=plt.cm.gray)
+    #         # plt.show()
+    #         del data, reshape_data, lbl, reshape_lbl
+    #
+    #     lbl = np.memmap(filename=data_path + '_reshape' + ".lbl", dtype=np.uint8, mode="r")
+    #     val_lbl = np.memmap(filename=val_path + ".lbl", dtype=np.uint8, mode="r")
+    #     train_size = lbl.shape[0]
+    #     val_size = val_lbl.shape[0]
+    #     print(lbl.shape, val_size, sum(lbl))
+    #     data_reshape = (train_size, self.patch_size[model_num], self.patch_size[model_num],
+    #                     self.z_size[model_num], self.mod_cnt)
+    #     val_shape = (val_size, self.patch_size[model_num], self.patch_size[model_num],
+    #                     self.z_size[model_num], self.mod_cnt)
+    #     data = np.memmap(filename=data_path + '_reshape' + ".dat", dtype=np.float32,
+    #                                  mode="r", shape=data_reshape)
+    #     val = np.memmap(filename=val_path + ".dat", dtype=np.float32, mode="r", shape=val_shape)
+    #
+    #     batch = tf.Variable(0, dtype=tf.float32)  # LR*D^EPOCH=FLR --> LR/FLR
+    #     learning_rate = tf.train.exponential_decay(learning_rate=self.init_lr, global_step=batch,
+    #                                                decay_steps=25,
+    #                                                decay_rate=0.95, staircase=True)
+    #     # print(learning_rate)
+    #     optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9).minimize(cross_entropy, global_step=batch)
+    #     predict = tf.to_double(100) * (
+    #         tf.to_double(1) - tf.reduce_mean(tf.to_double(tf.nn.in_top_k(softmax, label_node, 1))))
+    #
+    #     with tf.Session() as sess:
+    #         summary_path = self.hdd_output_path + "summary_%s_pre_cnn/%d" % (self.data_name[model_num], int(time.time()))
+    #         # summary_val_path = self.hdd_output_path + \
+    #         #                    "summary_%s_pre_cnn/%d" % (self.data_name[model_num], int(time.time()))
+    #         model_path = self.hdd_output_path + "model_%s_pre_cnn/" % (self.data_name[model_num])
+    #         if not os.path.exists(model_path):
+    #             os.makedirs(model_path)
+    #         tf.global_variables_initializer().run()
+    #         print("Variable Initialized")
+    #         tf.summary.scalar("error", predict)
+    #         summary_op = tf.summary.merge_all()
+    #         summary_writer = tf.summary.FileWriter(summary_path, sess.graph)
+    #         # summary_val_writer = tf.summary.FileWriter(summary_val_path, sess.graph)
+    #         saver = tf.train.Saver(keep_checkpoint_every_n_hours=2, max_to_keep=30)
+    #         start_time = time.time()
+    #
+    #         # batch size
+    #         cur_epoch = 0
+    #         for step in range(int(self.pre_epochs * train_size) // self.batch_size):
+    #             offset = (step * self.batch_size) % (train_size - self.batch_size)
+    #             val_offset = (step * self.batch_size) % (val_size - self.batch_size)
+    #             # offset = step % self.batch_size
+    #             batch_data = data[offset:offset + self.batch_size]
+    #             batch_labels = lbl[offset:offset + self.batch_size]
+    #             # batch_val = val[val_offset:val_offset + self.batch_size]
+    #             # batch_val_labels = val_lbl[val_offset:val_offset + self.batch_size]
+    #             feed_dict = {data_node: batch_data, label_node: batch_labels}
+    #
+    #             _, l, lr, predictions, summary_out = sess.run(
+    #                 [optimizer, cross_entropy, learning_rate, predict, summary_op],
+    #                 feed_dict=feed_dict)
+    #             #
+    #             # feed_dict_val = {data_node: batch_val, label_node:batch_val_labels}
+    #             # predictions_val = sess.run([predict], feed_dict=feed_dict_val)
+    #
+    #             summary_writer.add_summary(summary_out, global_step=step * self.batch_size)
+    #             if step % self.eval_freq == 0:
+    #                 elapsed_time = time.time() - start_time
+    #                 start_time = time.time()
+    #                 print('Step %d (pre_epoch %.2f), %d s' % (step,
+    #                                                           float(step) * self.batch_size / train_size, elapsed_time))
+    #                 print('Minibatch loss: %.3f, learning rate: %.6f' % (l, lr))
+    #                 # print('Minibatch error: %.3f Val error: %.3f' % (predictions, predictions_val[0]))
+    #                 # print('Minibatch error: %.1f Var error: %.1f' % (predictions, predictions_val))
+    #
+    #             if np.floor(cur_epoch) != np.floor((step * self.batch_size) / train_size):
+    #                 print(cur_epoch)
+    #                 print((step * self.batch_size) / train_size)
+    #                 # print(cur_epoch==(step * self.batch_size) / train_size)
+    #                 print("Saved in path", saver.save(sess, model_path + "%d.ckpt" % (cur_epoch)))
+    #
+    #                 # randnum = np.random.randint(0, cut_size)
+    #                 # curdata = data[randnum:train_size + randnum - cut_size]
+    #                 # curlbl = lbl[randnum:train_size + randnum - cut_size]
+    #             cur_epoch = (step * self.batch_size) / train_size
+    #
+    #         print("Saved in path", saver.save(sess, model_path + "savedmodel_final.ckpt"))
+    #     tf.reset_default_graph()
 
 
-    def train_original_CNN(self, cross_entropy, softmax, data_node, label_node, val_node, valbl_node, model_num):
+    # def fine_tune_CNN(self, cross_entropy, softmax, data_node, label_node, model_num):
+    #     def find(target, obj):
+    #         lists = []
+    #         for i, lst in enumerate(obj):
+    #             # for j, name in enumerate(lst):
+    #             if lst == target:
+    #                 lists.append(i)
+    #
+    #         return lists
+    #
+    #     logthis("Fine Tune CNN training started!")
+    #
+    #     if model_num == 0:
+    #         data_path = self.hdd_output_path + "/btm/" + "btm_fineTotal"
+    #         val_path = self.hdd_output_path + "/btm/" + "btm_valTotal"
+    #
+    #     elif model_num == 1:
+    #         data_path = self.hdd_output_path + "/mid/" + "mid_fineTotal"
+    #         val_path = self.hdd_output_path + "/mid/" + "mid_valTotal"
+    #
+    #     elif model_num == 2:
+    #         data_path = self.hdd_output_path + "/top/" + "top_fineTotal"
+    #         val_path = self.hdd_output_path + "/top/" + "top_valTotal"
+    #
+    #     if not os.path.exists("%s_reshape.dat" % (data_path)):
+    #         lbl = np.memmap(filename=data_path + ".lbl", dtype=np.uint8, mode="r")
+    #         train_size = lbl.shape[0]
+    #
+    #         true_idx = find(1, lbl)
+    #         false_idx = find(0, lbl)
+    #
+    #         tune_false_idx = false_idx[:len(true_idx)]
+    #
+    #         true_idx.extend(tune_false_idx)
+    #
+    #         rand_idx = np.random.permutation(len(true_idx))
+    #         data_shape = (self.patch_size[model_num], self.patch_size[model_num],
+    #                       self.z_size[model_num], train_size, self.mod_cnt)
+    #
+    #         data = np.memmap(filename=data_path + ".dat", dtype=np.float32, mode="r", shape=data_shape)
+    #
+    #         tune_lbl = lbl[true_idx]
+    #         tune_data = data[:, :, :, true_idx, :]
+    #         del data, lbl
+    #
+    #         lbl = tune_lbl[rand_idx]
+    #         data = tune_data[:, :, :, rand_idx, :]
+    #         data = np.transpose(data, axes=(3, 0, 1, 2, 4))
+    #
+    #         # data_reshape = (self.patch_size[model_num], self.patch_size[model_num],
+    #         #               self.z_size[model_num], len(true_idx), self.mod_cnt)
+    #         # reshape_data = np.memmap(filename=data_path + '_reshape' + ".dat", dtype=np.float32,
+    #         #                          mode="w+", shape=data_reshape)
+    #         # reshape_lbl = np.memmap(filename=data_path + '_reshape' + ".dat", dtype=np.float32,
+    #         #                          mode="w+", shape=len(true_idx))
+    #         #
+    #         # reshape_data[:, :, :, :, :] = tune_data.copy()
+    #         # reshape_lbl[:] = tune_lbl.copy()
+    #
+    #         del tune_data, tune_lbl
+    #     else:
+    #         lbl = np.memmap(filename=data_path + ".lbl", dtype=np.uint8, mode="r")
+    #
+    #         true_idx = find(1, lbl)
+    #         false_idx = find(0, lbl)
+    #         tune_false_idx = false_idx[:len(true_idx)]
+    #
+    #         true_idx.extend(tune_false_idx)
+    #         data_reshape = (self.patch_size[model_num], self.patch_size[model_num],
+    #                         self.z_size[model_num], len(true_idx), self.mod_cnt)
+    #         data = np.memmap(filename=data_path + "_reshape.dat", dtype=np.float32, mode="r", shape=data_reshape)
+    #         lbl = np.memmap(filename=data_path + "_reshape.lbl", dtype=np.uint8, mode="r")
+    #
+    #     val_lbl = np.memmap(filename=val_path + ".lbl", dtype=np.uint8, mode="r")
+    #
+    #     val_size = val_lbl.shape[0]
+    #     val_shape = (self.patch_size[model_num], self.patch_size[model_num],
+    #                       self.z_size[model_num], val_size, self.mod_cnt)
+    #
+    #     val = np.memmap(filename=val_path + ".dat", dtype=np.float32, mode="r", shape=val_shape)
+    #     train_size = data.shape[0]
+    #     batch = tf.Variable(0, dtype=tf.float32)  # LR*D^EPOCH=FLR --> LR/FLR
+    #     learning_rate = tf.train.exponential_decay(learning_rate=0.0001, global_step=batch * self.batch_size,
+    #                                                decay_steps=25, staircase=True,
+    #                                                decay_rate=0.95)
+    #     val = np.transpose(val, axes=(3, 0, 1, 2, 4))
+    #     # print(learning_rate.value, batch.value)
+    #     optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9).minimize(cross_entropy)
+    #     predict = tf.to_double(100) * (
+    #         tf.to_double(1) - tf.reduce_mean(tf.to_double(tf.nn.in_top_k(softmax, label_node, 1))))
+    #
+    #     with tf.Session() as sess:
+    #         summary_path = self.hdd_output_path + "summary_%s_cnn/%d" % (self.data_name[model_num], int(time.time()))
+    #
+    #         fine_model_path = self.hdd_output_path + "model_%s_fine_cnn/" % (self.data_name[model_num])
+    #         model_path = self.hdd_output_path + "model_%s_pre_cnn/savedmodel_final.ckpt" % (self.data_name[model_num])
+    #         if not os.path.exists(fine_model_path):
+    #             os.makedirs(fine_model_path)
+    #             print("Model is not exist !!!")
+    #
+    #         tf.global_variables_initializer().run()
+    #         print("Variable Initialized")
+    #
+    #         tf.summary.scalar("error", predict)
+    #         summary_op = tf.summary.merge_all()
+    #         summary_writer = tf.summary.FileWriter(summary_path, sess.graph)
+    #         # conv2_w = tf.get_tensor_by_name('c2w')
+    #         saver = tf.train.Saver(keep_checkpoint_every_n_hours=2, max_to_keep=30)
+    #         saver.restore(sess, model_path)
+    #
+    #         start_time = time.time()
+    #
+    #         # batch size
+    #         cur_epoch = 0
+    #         for step in range(int(self.epochs * train_size) // self.batch_size):
+    #             offset = (step * self.batch_size) % (train_size - self.batch_size)
+    #             val_offset = (step * self.batch_size) % (val_size - self.batch_size)
+    #             print(offset, val_offset)
+    #             batch_data = data[offset:offset + self.batch_size]
+    #             batch_labels = lbl[offset:offset + self.batch_size]
+    #             batch_val = val[val_offset:val_offset + self.batch_size]
+    #             batch_val_labels = val_lbl[val_offset:val_offset + self.batch_size]
+    #
+    #             feed_dict = {data_node: batch_data, label_node: batch_labels}
+    #
+    #             _, l, lr, predictions, summary_out = sess.run(
+    #                 [optimizer, cross_entropy, learning_rate, predict, summary_op],
+    #                 feed_dict=feed_dict)
+    #             feed_dict_val = {data_node: batch_val, label_node: batch_val_labels}
+    #             predictions_val = sess.run([predict], feed_dict=feed_dict_val)
+    #
+    #             summary_writer.add_summary(summary_out, global_step=step * self.batch_size)
+    #             if step % self.eval_freq == 0:
+    #                 elapsed_time = time.time() - start_time
+    #                 start_time = time.time()
+    #                 print(
+    #                     'Step %d (epoch %.2f), %d s' % (step, float(step) * self.batch_size / train_size, elapsed_time))
+    #                 print('Minibatch loss: %.3f, learning rate: %.6f' % (l, lr))
+    #                 print('Minibatch error: %.2f Val error: %.2f' % (predictions, predictions_val[0]))
+    #
+    #             if np.floor(cur_epoch) != np.floor((step * self.batch_size) / train_size):
+    #                 print(cur_epoch)
+    #                 print((step * self.batch_size) / train_size)
+    #                 # print(cur_epoch==(step * self.batch_size) / train_size)
+    #                 print("Saved in path", saver.save(sess, fine_model_path + "%d.ckpt" % (cur_epoch)))
+    #
+    #                 # randnum = np.random.randint(0, cut_size)
+    #                 # curdata = data[randnum:train_size + randnum - cut_size]
+    #                 # curlbl = lbl[randnum:train_size + randnum - cut_size]
+    #             cur_epoch = (step * self.batch_size) / train_size
+    #
+    #         print("Saved in path", saver.save(sess, fine_model_path + "savedmodel_final.ckpt"))
+    #     tf.reset_default_graph()
+
+    def train_original_CNN(self, cross_entropy, softmax, data_node, label_node, model_num):
         logthis("Original CNN training started!")
 
         if model_num == 0:
-            data_path = self.hdd_output_path + "/btm" + "/btm_trainTotal"
+            data_path = self.hdd_output_path + "btm/" + "btm_trainTotal"
         elif model_num == 1:
-            data_path = self.hdd_output_path + "/mid" + "/mid_trainTotal"
+            data_path = self.hdd_output_path + "mid/" + "mid_trainTotal"
         elif model_num == 2:
-            data_path = self.hdd_output_path + "/top" + "/top_trainTotal"
+            data_path = self.hdd_output_path + "top/" + "top_trainTotal"
 
         if not os.path.exists("%s_reshape.dat" % (data_path)):
             lbl = np.memmap(filename=data_path + ".lbl", dtype=np.uint8, mode="r")
             train_size = lbl.shape[0]
             rand_idx = np.random.permutation(train_size)
-            lbl = lbl[rand_idx]
             data_shape = (self.z_size[model_num], self.patch_size[model_num], self.patch_size[model_num], train_size)
             data = np.memmap(filename=data_path + ".dat", dtype=np.float32, mode="r", shape=data_shape)
-            # data = data[:, :, :, rand_idx]
             data_reshape = (train_size, self.z_size[model_num], self.patch_size[model_num], self.patch_size[model_num])
             reshape_data = np.memmap(filename=data_path + '_reshape' + ".dat", dtype=np.float32,
                                      mode="w+", shape=data_reshape)
             reshape_lbl = np.memmap(filename=data_path + '_reshape' + ".lbl", dtype=np.uint8,
-                                     mode="w+", shape=(train_size))
+                                    mode="w+", shape=(train_size))
             idx_size = len(rand_idx)
             print(idx_size, int(idx_size / 3), int(idx_size // 3))
             if self.data_name[model_num] == 'top':
@@ -730,12 +767,11 @@ class model_execute:
                 reshape_data[int((idx_size*2) // 3):, :, :, :] = data3.copy()
                 reshape_lbl = lbl.copy()
             else:
+                lbl = lbl[rand_idx]
+                reshape_lbl[:] = lbl.copy()
                 data = data[:, :, :, rand_idx]
                 data = np.transpose(data, axes=(3, 0, 1, 2))
-                    # data = data.append([])
                 reshape_data[:, :, :, :] = data.copy()
-                reshape_lbl = lbl.copy()
-
             del data, reshape_data, lbl, reshape_lbl
             
         if self.data_name[model_num] == 'top':
@@ -757,9 +793,10 @@ class model_execute:
                                          mode="r", shape=data_reshape)
 
         # lbl = one_hot(lbl)
+
         batch = tf.Variable(0, dtype=tf.float32)  # LR*D^EPOCH=FLR --> LR/FLR
         learning_rate = tf.train.exponential_decay(learning_rate=self.init_lr, global_step=batch,
-                                                   decay_steps=5000,
+                                                   decay_steps=25,
                                                    decay_rate=0.95, staircase=True)
         # print(learning_rate.value, batch.value)
         optimizer = tf.train.MomentumOptimizer(learning_rate, 0.9).minimize(cross_entropy, global_step=batch)
@@ -776,7 +813,7 @@ class model_execute:
             tf.summary.scalar("error", predict)
             summary_op = tf.summary.merge_all()
             summary_writer = tf.summary.FileWriter(summary_path, sess.graph)
-            saver = tf.train.Saver(keep_checkpoint_every_n_hours=2, max_to_keep=30)
+            saver = tf.train.Saver(keep_checkpoint_every_n_hours=8, max_to_keep=30)
             start_time = time.time()
 
             # batch size
@@ -823,6 +860,7 @@ class model_execute:
             data_path = self.hdd_output_path + "top_totalTotal"
         # model_path = self.hdd_output_path + "model_%s_cnn/%s.ckpt" % (self.data_name[model_num], model_epoch)
         # if not os.path.exists(self.hdd_output_path + "model_%s_fine_cnn/%s.ckpt" % (self.data_name[model_num], model_epoch)):
+
         if not os.path.exists(self.hdd_output_path + "model_%s_cnn/%s.ckpt" % (self.data_name[model_num], model_epoch)):
             # model_path = self.hdd_output_path + "model_%s_fine_cnn/savedmodel_final.ckpt" % (self.data_name[model_num])
             model_path = self.hdd_output_path + "model_%s_cnn/savedmodel_final.ckpt" % (self.data_name[model_num])
@@ -872,7 +910,7 @@ class model_execute:
         tf.reset_default_graph()
 
 
-    def code_test(self):
+def code_test(self):
         # data_path = self.hdd_output_path + "%s_orig.dat" % ("t")
         # data = np.memmap(filename=data_path, dtype=np.float32, mode="r").reshape(self.input_shape)
 
