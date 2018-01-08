@@ -10,7 +10,7 @@ import matplotlib.patches as patches
 from matplotlib.animation import FuncAnimation
 from scipy import ndimage as nd
 
-from revised_code import train_model
+import train_model
 from skimage import morphology
 from skimage import measure
 from skimage.transform import resize
