@@ -12,6 +12,7 @@ Ubuntu 14.04.02 LTS
 ## Authors
 
 Bum-Chae Kim and prof. Heung-Il Suk*
+
 *corresponding author: hisuk@korea.ac.kr
 
 Machine Intelligence Lab.,
