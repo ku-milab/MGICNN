@@ -405,7 +405,7 @@ class model_execute:
 
         tf.reset_default_graph()
 
-    def test_bck_Complex_RM_CNN(self, cand_num, softmax, data_node1, data_node2, top1, top2, bottom1, bottom2, md_num):
+    def test_Gradual_Multi_scale_CNN(self, cand_num, softmax, data_node1, data_node2, top1, top2, bottom1, bottom2, md_num):
         logthis("Complex ConCat Module CNN testing started!")
         if cand_num == 1:
             data_path = "./output_test/btm_pm/%s"
@@ -415,7 +415,7 @@ class model_execute:
 
         model_path = self.hdd_output_path + "model_" + "CPX_V2_ELEMENTWISESUM/%s.ckpt" % (md_num)
         # model_path = self.hdd_output_path + "model_" + "ComplexMod_V2_CONV/savedmodel_final.ckpt"
-        pm_path = "./output_test/" + "CPX_ZI132_ZO321_Model.dat"
+        pm_path = "./output_test/" + "CPX_Model_result.dat"
         lbl = np.memmap(filename=data_path % "btm_totalTotal.lbl", dtype=np.uint8, mode="r")
         test_shape = lbl.shape[0]
         data_shape = (6, 20, 20, test_shape)
