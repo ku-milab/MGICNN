@@ -1,37 +1,32 @@
 
 # Multi-scale Gradual Itegration Convolutional Neural Network for False Positive Reduction in Pulmonary Nodule Detection
 
-## Readme
+[arXiv:1807.10581](https://arxiv.org/abs/1807.10581)
 
-python 3.4
+## Overview
 
-tensorflow 1.3
+#### Lung Nodula Analysis 2016 (LUNA16) 
 
-Ubuntu 14.04.02 LTS
+This project for pulmonary nodule detection systems FP reduction in CT scans.
 
-## Authors
+We use [LUNA16 challenge](https://luna16.grand-challenge.org/) dataset.
 
-Bum-Chae Kim and prof. Heung-Il Suk*
-*corresponding author: hisuk@korea.ac.kr
+LUNA16 includes samples from 888 patients in the LIDC-IDRI open database, 
 
-Machine Intelligence Lab.,
-Dept. Brain & Cognitive Engineering. 
-Korea University, Seoul, Rep. of Korea.
+which contains annotations of the Ground Truth (GT) collected from 
+
+the two-step annotation process by four experienced radiologists.
+
+#### MGI-CNN 
+
+Our model consist of Gradual Feature Extraction (GFE) and Multi-Stream Feature Integration (MSFI)
+
+The GFE is feature extraction in multi-scale inputs with a gradual strategy.
+
+The MSFI is consist with multi-stream feature representations and abstract-level feature integration.
 
 
-## Thanks
-
-JiSeok Yoon, thank you for your cooperation!
-
-
-## Lung Nodula Analysis 2016 (LUNA16) 
-
-This project for pulmonary nodule detection systems FP reduction.
-We use LUNA16 challenge dataset.
-
-- https://luna16.grand-challenge.org/ 
-
-## Results
+#### Results
 
 We participated in the competition and got the following CPMs:
 
@@ -41,5 +36,23 @@ We participated in the competition and got the following CPMs:
 @:The submissions with '@'' used the initially provided 
 list of nodule candidates computed using fewer candidate detection algorithms.
 
-last update date: 2018.01.07.
+## Authors
+
+Bum-Chae Kim, Jun-Sik Choi and prof. Heung-Il Suk*
+
+*Corresponding author: hisuk@korea.ac.kr
+
+Machine Intelligence Lab.,
+
+Dept. Brain & Cognitive Engineering. 
+
+Korea University, Seoul, Rep. of Korea.
+
+
+## Thanks
+
+JiSeok Yoon, thank you for your cooperation!
+
+
+last update date: 2018.08.08.
 
