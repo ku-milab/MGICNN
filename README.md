@@ -1,7 +1,7 @@
 
 # Multi-scale Gradual Itegration Convolutional Neural Network for False Positive Reduction in Pulmonary Nodule Detection
 
-[arXiv:1807.10581](https://arxiv.org/abs/1807.10581)
+[Link][arXiv:1807.10581](https://arxiv.org/abs/1807.10581)
 
 ## Overview
 
@@ -17,14 +17,26 @@ which contains annotations of the Ground Truth (GT) collected from
 
 the two-step annotation process by four experienced radiologists.
 
+#### Motivation
+
+Pulmonary nodules have a small size and various morphological features.
+
+Therefore, it is difficult to classify using only the information of the nodule, so the adjacent region of nodules must be considered together.
+
+The paper proposed a novel CNN architecture to consider the information with the surrounding area.
+
 #### MGI-CNN 
 
 Our model consist of Gradual Feature Extraction (GFE) and Multi-Stream Feature Integration (MSFI)
 
-The GFE is feature extraction in multi-scale inputs with a gradual strategy.
+The GFE is a feature extraction method with a gradual strategy in multi-scale inputs.
+
+For gradual strategy in cosider zoom-in and zoom-out strategy. 
+
+* Zoom-in: Gradually extract information from a wide area to a narrow area.
+* Zoom-out: Gradually extract information from a narrow area to a wide area.
 
 The MSFI is consist with multi-stream feature representations and abstract-level feature integration.
-
 
 #### Results
 
