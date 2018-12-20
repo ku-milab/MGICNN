@@ -11,6 +11,8 @@ For data processing: SimpleITK, Scipy
 
 ```pip install SimpleITK scipy```
 
+This code requires unzipped LUNA16 dataset. (https://luna16.grand-challenge.org/Download/)
+
 For training: Ubuntu 16.04, Python 3.6, Tensorflow 1.10
 
 (Optional) GPUtil
@@ -44,23 +46,6 @@ E.g.\
 4. Specify which model to use (--model_mode). (0-proposed, 1-RI , 2-LR, 3-ZI, 4- ZO)
 5. Specify train or test (--train or --test and --tst_model_path/--tst_epoch).
 
-## Authors
-
-Bum-Chae Kim, Jee Seok Yoon, and prof. Heung-Il Suk*
-
-*corresponding author: hisuk@korea.ac.kr
-
-Machine Intelligence Lab.,\
-Dept. Brain & Cognitive Engineering.\
-Korea University, Seoul, South Korea.
-
-
-## Lung Nodula Analysis 2016 (LUNA16) 
-
-This project for pulmonary nodule detection systems FP reduction.
-We use LUNA16 challenge dataset.
-
-- https://luna16.grand-challenge.org/ 
 
 ## Results
 
@@ -72,5 +57,12 @@ We participated in the competition and got the following CPMs:
 @:The submissions with '@'' used the initially provided 
 list of nodule candidates computed using fewer candidate detection algorithms.
 
-last update date: 2018.12.20.
+## Authors
 
+Bum-Chae Kim, Jee Seok Yoon, and prof. Heung-Il Suk*
+
+*corresponding author: hisuk@korea.ac.kr
+
+Machine Intelligence Lab.,\
+Dept. Brain & Cognitive Engineering.\
+Korea University, Seoul, South Korea.
