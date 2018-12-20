@@ -33,6 +33,12 @@ summ_path_root = ARGS.summ_path_root
 tst_model_path = ARGS.tst_model_path
 tst_epoch = ARGS.tst_epoch
 
+if data_path[-1]!="/":
+    data_path += "/"
+if summ_path_root[-1]!="/":
+    summ_path_root += "/"
+if tst_model_path[-1]!="/":
+    tst_model_path += "/"
 
 batch_norm = True
 dropout = True
