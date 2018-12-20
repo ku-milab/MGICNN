@@ -1,9 +1,0 @@
-*.log
-**data/
-**output/
-**output_test/
-*.dat
-*.lbl
-*.mhd
-*.raw
-*.png
