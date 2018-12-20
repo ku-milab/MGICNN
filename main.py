@@ -3,7 +3,6 @@ import utils
 import numpy as np
 import tensorflow as tf
 import model
-import GPUtil
 from time import time
 import os
 from glob import glob
@@ -56,8 +55,6 @@ def train_proposed():
                     print("\rEpoch %d, Step %d, Loss %f"%(cur_epoch, cur_step, loss), end="")
                     local_time= time()
                 trn_cnt+=1
-                if not st.deploy:
-                    break
             saver.save(sess=sess, save_path=st.summ_path + "%d_%d_%d_%d.ckpt" % (st.fold_num, st.multistream_mode, st.model_mode, cur_epoch))
             tst_pred = np.zeros(shape=len(tst_dat), dtype=np.uint8)
             for tst_step in range(0, len(tst_dat), st.batch_size):
@@ -82,10 +79,6 @@ def train_proposed():
 
 def test_proposed():
     from glob import glob
-    #"%s_%d_%d_%d/"%(strftime("%m%d_%H%M%S", localtime()), fold_num, multistream_mode, model_mode)
-    #"%d_%d_%d_%d.ckpt" % (st.fold_num, st.multistream_mode, st.model_mode, cur_epoch)
-
-    every_n_epoch = 5
 
     _, _, tst_dat1, tst_lbl1 = utils.load_fold(fold_num=0)
     _, _, tst_dat2, tst_lbl2 = utils.load_fold(fold_num=1)
@@ -93,11 +86,7 @@ def test_proposed():
     _, _, tst_dat4, tst_lbl4 = utils.load_fold(fold_num=3)
     _, _, tst_dat5, tst_lbl5 = utils.load_fold(fold_num=4)
 
-    all_tst_pm = [np.zeros(shape=(50//every_n_epoch+1, len(tst_dat1)), dtype=np.float32),
-                  np.zeros(shape=(50 // every_n_epoch + 1, len(tst_dat2)), dtype=np.float32),
-                  np.zeros(shape=(50 // every_n_epoch + 1, len(tst_dat3)), dtype=np.float32),
-                  np.zeros(shape=(50 // every_n_epoch + 1, len(tst_dat4)), dtype=np.float32),
-                  np.zeros(shape=(50 // every_n_epoch + 1, len(tst_dat5)), dtype=np.float32)]
+    all_tst_pm = []
     all_tst_dat = [tst_dat1, tst_dat2, tst_dat3, tst_dat4, tst_dat5]
     all_tst_lbl = [tst_lbl1, tst_lbl2, tst_lbl3, tst_lbl4, tst_lbl5]
 
@@ -115,37 +104,36 @@ def test_proposed():
         for cur_fold in range(st.max_fold):
             tst_dat = all_tst_dat[cur_fold]
             tst_lbl = all_tst_lbl[cur_fold]
-            fp = sorted(glob("/Data3/jsyoon/bck_nn/*_%d_%d_%d" % (cur_fold, st.multistream_mode, st.model_mode)), key=os.path.basename)[-1]
             tst_cnt = 0
-            for epoch_cnt, cur_epoch in enumerate(range(0, 51, every_n_epoch)):
-                tst_pm = np.zeros(shape=len(tst_dat), dtype=np.float32)
-                # print(glob(fp+"/%d_%d_%d_%d.ckpt.meta"%(cur_fold, st.multistream_mode, st.model_mode, cur_epoch)))
-                sess.run(tf.global_variables_initializer())
-                saver.restore(sess= sess, save_path=fp+"/%d_%d_%d_%d.ckpt"%(cur_fold, st.multistream_mode, st.model_mode, cur_epoch))
-                for tst_step in range(0, len(tst_dat), st.batch_size):
-                    test_feed_dict = {placeholders["bdat"]: tst_dat[tst_step:tst_step + st.batch_size, 0],
-                                      placeholders["mdat"]: tst_dat[tst_step:tst_step + st.batch_size, 1],
-                                      placeholders["tdat"]: tst_dat[tst_step:tst_step + st.batch_size, 2],
-                                      placeholders["lbl"]: tst_lbl[tst_step:tst_step + st.batch_size],
-                                      placeholders["train"]: False}
+            tst_pm = np.zeros(shape=len(tst_dat), dtype=np.float32)
+            sess.run(tf.global_variables_initializer())
+            saver.restore(sess= sess, save_path=os.path.join(st.tst_model_path, "%d_%d_%d_%d.ckpt"%(cur_fold, st.multistream_mode, st.model_mode, st.tst_epoch)))
+            for tst_step in range(0, len(tst_dat), st.batch_size):
+                test_feed_dict = {placeholders["bdat"]: tst_dat[tst_step:tst_step + st.batch_size, 0],
+                                  placeholders["mdat"]: tst_dat[tst_step:tst_step + st.batch_size, 1],
+                                  placeholders["tdat"]: tst_dat[tst_step:tst_step + st.batch_size, 2],
+                                  placeholders["lbl"]: tst_lbl[tst_step:tst_step + st.batch_size],
+                                  placeholders["train"]: False}
 
-                    tst_pm[tst_step:tst_step+st.batch_size] = sess.run(models.pred_sig, feed_dict=test_feed_dict)[:, 0]
+                tst_pm[tst_step:tst_step+st.batch_size] = sess.run(models.pred_sig, feed_dict=test_feed_dict)[:, 0]
 
-                all_tst_pm[cur_fold][epoch_cnt] = tst_pm
-                print(cur_fold, cur_epoch)
+            all_tst_pm += [tst_pm]
             tst_cnt+=len(tst_pm)
-    all_tst_pm = np.concatenate(all_tst_pm, axis=-1)
+    all_tst_pm = np.concatenate(all_tst_pm, axis=0)
     np.save(st.summ_path_root+"pm/%d_%d_pm.npy"%(st.model_mode, st.multistream_mode), all_tst_pm)
 
 
 
 if __name__ == "__main__":
-    if st.set_gpu==-1:
-        devices = "%d" % GPUtil.getFirstAvailable(order="memory")[0]
-    else:
-        devices = "%d"%st.set_gpu
-    os.environ["CUDA_VISIBLE_DEVICES"] = devices
-    print("Using only device %s" % devices)
+    # #### Uncomment if you want to use GPUtil and/or GPU flag #####
+    # import GPUtil
+    # if st.set_gpu==-1:
+    #     devices = "%d" % GPUtil.getFirstAvailable(order="memory")[0]
+    # else:
+    #     devices = "%d"%st.set_gpu
+    # os.environ["CUDA_VISIBLE_DEVICES"] = devices
+    # print("Using only device %s" % devices)
+    # #########################################################
 
     if st.train:
         train_proposed()
