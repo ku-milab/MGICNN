@@ -59,9 +59,9 @@ https://luna16.grand-challenge.org/Results/
 
 ## Authors
 
-Bum-Chae Kim, Jee Seok Yoon, and prof. Heung-Il Suk*
+Bum-Chae Kim, Jee Seok Yoon, Jun-Sik Choi, and prof. Heung-Il Suk*
 
-*corresponding author: hisuk@korea.ac.kr
+*Corresponding author: hisuk@korea.ac.kr
 
 [Machine Intelligence Lab.](https://milab.korea.ac.kr),\
 Dept. Brain & Cognitive Engineering.\
