@@ -59,7 +59,7 @@ https://luna16.grand-challenge.org/Results/
 
 ## Authors
 
-Bum-Chae Kim, Jee Seok Yoon, Jun-Sik Choi, and prof. Heung-Il Suk*
+[Bum-Chae Kim](raretiger8@gmail.com), [Jee Seok Yoon](wltjr1007@korea.ac.kr), [Jun-Sik Choi](junsikchoi@korea.ac.kr), and [Prof. Heung-Il Suk](hisuk@korea.ac.kr)*
 
 *Corresponding author: hisuk@korea.ac.kr
 
