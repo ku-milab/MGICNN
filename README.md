@@ -1,7 +1,7 @@
 
-# Multi-scale Gradual Itegration Convolutional Neural Network for False Positive Reduction in Pulmonary Nodule Detection
+# Multi-scale Gradual Integration CNN for False Positive Reduction in Pulmonary Nodule Detection
 
-This repository contains code to train and test MGI-CNN. 
+This repository contains code to train and test MGI-CNN. (https://doi.org/10.1016/j.neunet.2019.03.003)
 
 ## Hardware and Software
 
