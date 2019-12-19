@@ -59,9 +59,10 @@ https://luna16.grand-challenge.org/Results/
 
 ## Authors
 
-[Bum-Chae Kim](mailto:raretiger8@gmail.com), [Jee Seok Yoon](mailto:wltjr1007@korea.ac.kr), [Jun-Sik Choi](mailto:junsikchoi@korea.ac.kr), and [Prof. Heung-Il Suk](mailto:hisuk@korea.ac.kr)*
+[Bum-Chae Kim](mailto:raretiger8@gmail.com), [Jee Seok Yoon](mailto:wltjr1007@korea.ac.kr)\*\*, [Jun-Sik Choi](mailto:junsikchoi@korea.ac.kr), and [Prof. Heung-Il Suk](mailto:hisuk@korea.ac.kr)*
 
-*Corresponding author: hisuk@korea.ac.kr
+*Corresponding author: hisuk@korea.ac.kr    
+\*\* For code inquiries: wltjr1007@korea.ac.kr    
 
 [Machine Intelligence Lab](https://milab.korea.ac.kr).,\
 Dept. Brain & Cognitive Engineering.\
